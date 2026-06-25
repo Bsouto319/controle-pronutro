@@ -22,6 +22,16 @@ export interface Contract {
   created_at: string
 }
 
+export interface Purchase {
+  id: string
+  patient_id: string
+  data_compra: string
+  quantidade_mg: number
+  lote: string | null
+  observacoes: string | null
+  created_at: string
+}
+
 export interface DoseRecord {
   id: string
   patient_id: string
@@ -31,6 +41,7 @@ export interface DoseRecord {
   data_aplicacao: string | null
   lote: string | null
   observacoes: string | null
+  proxima_dose_mg: number | null
   assinatura_paciente: string | null
   assinatura_profissional: string | null
 }
