@@ -85,6 +85,7 @@ export default function Paciente() {
     setSaving(semana)
     const data = doseForm[semana]
     const sig = sigRefs.current[semana]
+    const sigData = sig && !sig.isEmpty() ? sig.toDataURL() : (data.assinatura_paciente ?? null)
 
     const payload: Partial<DoseRecord> & { patient_id: string; semana: number } = {
       patient_id: id!,
@@ -95,7 +96,7 @@ export default function Paciente() {
       data_aplicacao: data.data_aplicacao ?? null,
       lote: data.lote ?? null,
       observacoes: data.observacoes ?? null,
-      assinatura_paciente: sig && !sig.isEmpty() ? sig.toDataURL() : (data.assinatura_paciente ?? null),
+      assinatura_paciente: sigData,
     }
 
     const existing = doses.find((d) => d.semana === semana)
@@ -103,6 +104,20 @@ export default function Paciente() {
       await supabase.from('pronutro_dose_records').update(payload).eq('id', existing.id)
     } else {
       await supabase.from('pronutro_dose_records').insert(payload)
+    }
+
+    // Envia email de confirmação ao paciente quando há assinatura nova
+    if (sig && !sig.isEmpty() && patient?.email) {
+      supabase.functions.invoke('send-dose-email', {
+        body: {
+          patient_name: patient.nome,
+          patient_email: patient.email,
+          semana,
+          dose_mg: data.dose_mg ?? null,
+          proxima_dose_mg: data.proxima_dose_mg ?? null,
+          data_aplicacao: data.data_aplicacao ?? null,
+        },
+      })
     }
 
     const { data: updated } = await supabase.from('pronutro_dose_records').select('*').eq('patient_id', id).order('semana')
