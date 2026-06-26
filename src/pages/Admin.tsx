@@ -78,21 +78,21 @@ export default function Admin() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 sm:mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Pacientes</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Pacientes</h1>
           <p className="text-sm text-gray-500">{patients.length} cadastrado{patients.length !== 1 ? 's' : ''}</p>
         </div>
         <div className="flex gap-2">
           <button
             onClick={exportCSV}
-            className="border border-gray-200 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors"
+            className="border border-gray-200 text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors flex-1 sm:flex-none"
           >
-            ↓ Exportar CSV
+            ↓ CSV
           </button>
           <Link
             to="/novo-paciente"
-            className="bg-brand text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-dark transition-colors"
+            className="bg-brand text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-brand-dark transition-colors flex-1 sm:flex-none text-center"
           >
             + Novo Paciente
           </Link>
@@ -115,44 +115,64 @@ export default function Admin() {
           <Link to="/novo-paciente" className="text-brand underline">Cadastrar primeiro paciente</Link>
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="text-left px-4 py-3 text-gray-600 font-medium">Paciente</th>
-                <th className="text-left px-4 py-3 text-gray-600 font-medium">CPF</th>
-                <th className="text-left px-4 py-3 text-gray-600 font-medium">Médico</th>
-                <th className="text-left px-4 py-3 text-gray-600 font-medium">Contrato</th>
-                <th className="text-left px-4 py-3 text-gray-600 font-medium">Cadastro</th>
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((p, i) => (
-                <tr
-                  key={p.id}
-                  className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${i % 2 === 0 ? '' : 'bg-gray-50/40'}`}
-                >
-                  <td className="px-4 py-3 font-medium text-gray-800">{p.nome}</td>
-                  <td className="px-4 py-3 text-gray-600">{p.cpf}</td>
-                  <td className="px-4 py-3 text-gray-600">{p.medico_prescritor}</td>
-                  <td className="px-4 py-3">{statusBadge(p.contract?.status)}</td>
-                  <td className="px-4 py-3 text-gray-500">
-                    {format(new Date(p.created_at), 'dd/MM/yyyy', { locale: ptBR })}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Link
-                      to={`/paciente/${p.id}`}
-                      className="text-brand hover:underline font-medium"
-                    >
-                      Ver →
-                    </Link>
-                  </td>
+        <>
+          {/* Cards — mobile */}
+          <div className="sm:hidden space-y-3">
+            {filtered.map((p) => (
+              <Link key={p.id} to={`/paciente/${p.id}`} className="block bg-white rounded-xl border border-gray-200 p-4 hover:border-brand/40 transition-colors">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-gray-800 truncate">{p.nome}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{p.cpf}</p>
+                  </div>
+                  <span className="text-brand text-sm font-medium flex-shrink-0">Ver →</span>
+                </div>
+                <div className="flex items-center gap-3 mt-3">
+                  {statusBadge(p.contract?.status)}
+                  <span className="text-xs text-gray-400">{p.medico_prescritor}</span>
+                  <span className="text-xs text-gray-400 ml-auto">{format(new Date(p.created_at), 'dd/MM/yy', { locale: ptBR })}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+
+          {/* Table — desktop */}
+          <div className="hidden sm:block bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-left px-4 py-3 text-gray-600 font-medium">Paciente</th>
+                  <th className="text-left px-4 py-3 text-gray-600 font-medium">CPF</th>
+                  <th className="text-left px-4 py-3 text-gray-600 font-medium">Médico</th>
+                  <th className="text-left px-4 py-3 text-gray-600 font-medium">Contrato</th>
+                  <th className="text-left px-4 py-3 text-gray-600 font-medium">Cadastro</th>
+                  <th className="px-4 py-3"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {filtered.map((p, i) => (
+                  <tr
+                    key={p.id}
+                    className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${i % 2 === 0 ? '' : 'bg-gray-50/40'}`}
+                  >
+                    <td className="px-4 py-3 font-medium text-gray-800">{p.nome}</td>
+                    <td className="px-4 py-3 text-gray-600">{p.cpf}</td>
+                    <td className="px-4 py-3 text-gray-600">{p.medico_prescritor}</td>
+                    <td className="px-4 py-3">{statusBadge(p.contract?.status)}</td>
+                    <td className="px-4 py-3 text-gray-500">
+                      {format(new Date(p.created_at), 'dd/MM/yyyy', { locale: ptBR })}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Link to={`/paciente/${p.id}`} className="text-brand hover:underline font-medium">
+                        Ver →
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   )

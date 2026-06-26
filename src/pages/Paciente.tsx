@@ -155,21 +155,21 @@ export default function Paciente() {
         <h2 className="font-bold text-gray-800 mb-4">Controle de Estoque — Tirzepatida</h2>
 
         {/* Cards resumo */}
-        <div className="grid grid-cols-3 gap-3 mb-5">
-          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-center">
-            <p className="text-xs text-blue-500 font-medium mb-1">Total Comprado</p>
-            <p className="text-2xl font-bold text-blue-700">{totalComprado} mg</p>
+        <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-5">
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 sm:p-4 text-center">
+            <p className="text-xs text-blue-500 font-medium mb-1">Comprado</p>
+            <p className="text-lg sm:text-2xl font-bold text-blue-700">{totalComprado} mg</p>
           </div>
-          <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 text-center">
-            <p className="text-xs text-orange-500 font-medium mb-1">Total Aplicado</p>
-            <p className="text-2xl font-bold text-orange-700">{totalAplicado} mg</p>
+          <div className="bg-orange-50 border border-orange-100 rounded-xl p-3 sm:p-4 text-center">
+            <p className="text-xs text-orange-500 font-medium mb-1">Aplicado</p>
+            <p className="text-lg sm:text-2xl font-bold text-orange-700">{totalAplicado} mg</p>
           </div>
-          <div className={`border rounded-xl p-4 text-center ${saldo > 0 ? 'bg-green-50 border-green-100' : saldo === 0 && totalComprado > 0 ? 'bg-gray-50 border-gray-200' : 'bg-red-50 border-red-100'}`}>
-            <p className={`text-xs font-medium mb-1 ${saldo > 0 ? 'text-green-500' : 'text-red-500'}`}>Saldo Restante</p>
-            <p className={`text-2xl font-bold ${saldo > 0 ? 'text-green-700' : saldo < 0 ? 'text-red-700' : 'text-gray-600'}`}>
+          <div className={`border rounded-xl p-3 sm:p-4 text-center ${saldo > 0 ? 'bg-green-50 border-green-100' : saldo === 0 && totalComprado > 0 ? 'bg-gray-50 border-gray-200' : 'bg-red-50 border-red-100'}`}>
+            <p className={`text-xs font-medium mb-1 ${saldo > 0 ? 'text-green-500' : 'text-red-500'}`}>Saldo</p>
+            <p className={`text-lg sm:text-2xl font-bold ${saldo > 0 ? 'text-green-700' : saldo < 0 ? 'text-red-700' : 'text-gray-600'}`}>
               {saldo} mg
             </p>
-            {saldo < 0 && <p className="text-xs text-red-500 mt-1">⚠️ Estoque negativo</p>}
+            {saldo < 0 && <p className="text-xs text-red-500 mt-1">Negativo</p>}
           </div>
         </div>
 
@@ -179,14 +179,14 @@ export default function Paciente() {
             <p className="text-xs font-medium text-gray-500 mb-2">HISTÓRICO DE ENTRADAS</p>
             <div className="space-y-1.5">
               {purchases.map((pur) => (
-                <div key={pur.id} className="flex items-center justify-between bg-blue-50/50 border border-blue-100 rounded-lg px-3 py-2 text-sm">
-                  <div className="flex items-center gap-3">
+                <div key={pur.id} className="flex items-start justify-between gap-2 bg-blue-50/50 border border-blue-100 rounded-lg px-3 py-2 text-sm">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 min-w-0">
                     <span className="text-blue-600 font-semibold">+{pur.quantidade_mg} mg</span>
                     <span className="text-gray-600">{format(new Date(pur.data_compra + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}</span>
                     {pur.lote && <span className="text-gray-400 text-xs">Lote: {pur.lote}</span>}
-                    {pur.observacoes && <span className="text-gray-400 text-xs">{pur.observacoes}</span>}
+                    {pur.observacoes && <span className="text-gray-400 text-xs truncate max-w-[120px]">{pur.observacoes}</span>}
                   </div>
-                  <button onClick={() => deletePurchase(pur.id)} className="text-red-400 hover:text-red-600 text-xs">✕</button>
+                  <button onClick={() => deletePurchase(pur.id)} className="text-red-400 hover:text-red-600 text-xs flex-shrink-0">✕</button>
                 </div>
               ))}
             </div>
@@ -287,11 +287,11 @@ export default function Paciente() {
 
       {/* Doses */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
           <h2 className="font-bold text-gray-800">Esquema de Doses (8 semanas)</h2>
           {saldo > 0 && proximaSemana <= 8 && (
             <div className="text-xs bg-green-50 border border-green-200 rounded-lg px-3 py-1.5 text-green-700">
-              Saldo disponível para {proximaSemana}ª semana: <strong>{saldo} mg</strong>
+              Saldo p/ {proximaSemana}ª semana: <strong>{saldo} mg</strong>
             </div>
           )}
         </div>
