@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import SignaturePad, { type SignaturePadHandle } from '../components/SignaturePad'
 import type { Patient, Contract, DoseRecord, Purchase } from '../types'
@@ -16,6 +16,7 @@ const statusBadge = (status?: string) => {
 
 export default function Paciente() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const [patient, setPatient] = useState<Patient | null>(null)
   const [contract, setContract] = useState<Contract | null>(null)
   const [doses, setDoses] = useState<DoseRecord[]>([])
@@ -23,6 +24,7 @@ export default function Paciente() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<number | null>(null)
   const [savingPurchase, setSavingPurchase] = useState(false)
+  const [togglingStatus, setTogglingStatus] = useState(false)
   const [doseForm, setDoseForm] = useState<Record<number, Partial<DoseRecord>>>({})
   const [activeSig, setActiveSig] = useState<number | null>(null)
   const [purchaseForm, setPurchaseForm] = useState({ data_compra: '', quantidade_mg: '', lote: '', observacoes: '' })
@@ -127,6 +129,28 @@ export default function Paciente() {
     setSaving(null)
   }
 
+  async function toggleAtivo() {
+    if (!patient) return
+    const novoStatus = patient.ativo === false ? true : false
+    const acao = novoStatus ? 'reativar' : 'inativar'
+    if (!confirm(`Deseja ${acao} o paciente ${patient.nome}?`)) return
+    setTogglingStatus(true)
+    await supabase.from('pronutro_patients').update({ ativo: novoStatus }).eq('id', patient.id)
+    setPatient((p) => p ? { ...p, ativo: novoStatus } : p)
+    setTogglingStatus(false)
+  }
+
+  async function deletarPaciente() {
+    if (!patient) return
+    if (!confirm(`ATENÇÃO: Isso apagará permanentemente o paciente ${patient.nome} e todos os seus dados. Confirma?`)) return
+    if (!confirm(`Última confirmação — apagar ${patient.nome} definitivamente?`)) return
+    await supabase.from('pronutro_dose_records').delete().eq('patient_id', patient.id)
+    await supabase.from('pronutro_purchases').delete().eq('patient_id', patient.id)
+    await supabase.from('pronutro_contracts').delete().eq('patient_id', patient.id)
+    await supabase.from('pronutro_patients').delete().eq('id', patient.id)
+    navigate('/')
+  }
+
   async function reenviarContrato() {
     if (!patient || !contract) return
     await supabase.functions.invoke('send-contract-email', {
@@ -150,8 +174,36 @@ export default function Paciente() {
       <Link to="/" className="text-sm text-brand hover:underline">← Voltar</Link>
 
       {/* Dados do paciente */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h1 className="text-xl font-bold text-gray-800 mb-4">{patient.nome}</h1>
+      <div className={`bg-white rounded-xl border p-6 ${patient.ativo === false ? 'border-gray-300 bg-gray-50' : 'border-gray-200'}`}>
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-gray-800">{patient.nome}</h1>
+              {patient.ativo === false && (
+                <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full font-medium">Inativo</span>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={toggleAtivo}
+              disabled={togglingStatus}
+              className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-colors disabled:opacity-50 ${
+                patient.ativo === false
+                  ? 'border-green-300 text-green-700 hover:bg-green-50'
+                  : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              {togglingStatus ? '...' : patient.ativo === false ? '✓ Reativar' : 'Inativar'}
+            </button>
+            <button
+              onClick={deletarPaciente}
+              className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 font-medium transition-colors"
+            >
+              Apagar
+            </button>
+          </div>
+        </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
           <div><span className="text-gray-500">CPF:</span><br /><span className="font-medium">{patient.cpf}</span></div>
           <div><span className="text-gray-500">Email:</span><br /><span className="font-medium">{patient.email}</span></div>

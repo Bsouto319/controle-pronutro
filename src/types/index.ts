@@ -7,6 +7,7 @@ export interface Patient {
   medico_prescritor: string
   dosagem_inicial_mg: number | null
   observacoes: string | null
+  ativo: boolean
   created_at: string
 }
 

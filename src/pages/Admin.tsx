@@ -17,10 +17,13 @@ const statusBadge = (status?: string) => {
   return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-200">✕ Expirado</span>
 }
 
+type FilterTab = 'ativos' | 'inativos' | 'todos'
+
 export default function Admin() {
   const [patients, setPatients] = useState<PatientWithContract[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [tab, setTab] = useState<FilterTab>('ativos')
 
   useEffect(() => {
     async function load() {
@@ -70,14 +73,19 @@ export default function Admin() {
     URL.revokeObjectURL(url)
   }
 
-  const filtered = patients.filter(
+  const ativos = patients.filter((p) => p.ativo !== false)
+  const inativos = patients.filter((p) => p.ativo === false)
+
+  const byTab = tab === 'ativos' ? ativos : tab === 'inativos' ? inativos : patients
+
+  const filtered = byTab.filter(
     (p) =>
       p.nome.toLowerCase().includes(search.toLowerCase()) ||
       p.cpf.includes(search)
   )
 
-  const totalSigned = patients.filter((p) => p.contract?.status === 'signed').length
-  const totalPending = patients.filter((p) => !p.contract || p.contract.status === 'pending').length
+  const totalSigned = ativos.filter((p) => p.contract?.status === 'signed').length
+  const totalPending = ativos.filter((p) => !p.contract || p.contract.status === 'pending').length
 
   return (
     <div>
@@ -95,6 +103,19 @@ export default function Admin() {
           <div className="text-2xl sm:text-3xl font-bold text-amber-600">{totalPending}</div>
           <div className="text-xs text-amber-600 mt-0.5">Aguardando</div>
         </div>
+      </div>
+
+      {/* Abas */}
+      <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-xl w-fit">
+        {([['ativos', `Ativos (${ativos.length})`, 'text-green-700'], ['inativos', `Inativos (${inativos.length})`, 'text-gray-500'], ['todos', 'Todos', 'text-gray-600']] as const).map(([key, label, _]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab === key ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* Toolbar */}
@@ -153,11 +174,14 @@ export default function Admin() {
               <Link
                 key={p.id}
                 to={`/paciente/${p.id}`}
-                className="block bg-white rounded-xl border border-gray-200 p-4 hover:border-brand/50 hover:shadow-sm transition-all"
+                className={`block bg-white rounded-xl border p-4 hover:shadow-sm transition-all ${p.ativo === false ? 'border-gray-200 opacity-60' : 'border-gray-200 hover:border-brand/50'}`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="font-semibold text-gray-800 truncate">{p.nome}</p>
+                    <div className="flex items-center gap-2">
+                      <p className={`font-semibold truncate ${p.ativo === false ? 'text-gray-400' : 'text-gray-800'}`}>{p.nome}</p>
+                      {p.ativo === false && <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full flex-shrink-0">Inativo</span>}
+                    </div>
                     <p className="text-xs text-gray-400 mt-0.5">{p.cpf}</p>
                   </div>
                   <span className="text-brand text-sm font-semibold flex-shrink-0">Ver →</span>
@@ -190,9 +214,14 @@ export default function Admin() {
                 {filtered.map((p) => (
                   <tr
                     key={p.id}
-                    className="hover:bg-green-50/40 transition-colors group"
+                    className={`transition-colors group ${p.ativo === false ? 'opacity-50' : 'hover:bg-green-50/40'}`}
                   >
-                    <td className="px-5 py-3.5 font-medium text-gray-800">{p.nome}</td>
+                    <td className="px-5 py-3.5 font-medium text-gray-800">
+                      <div className="flex items-center gap-2">
+                        {p.nome}
+                        {p.ativo === false && <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">Inativo</span>}
+                      </div>
+                    </td>
                     <td className="px-5 py-3.5 text-gray-500 font-mono text-xs">{p.cpf}</td>
                     <td className="px-5 py-3.5 text-gray-600">{p.medico_prescritor}</td>
                     <td className="px-5 py-3.5">{statusBadge(p.contract?.status)}</td>
