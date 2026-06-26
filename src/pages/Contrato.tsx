@@ -103,14 +103,8 @@ export default function Contrato() {
       <div className="max-w-3xl mx-auto">
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           {/* Header */}
-          <div className="bg-gradient-to-r from-brand to-brand-dark px-6 py-5 text-white">
-            <div className="flex items-center justify-center gap-4">
-              <ProNutroLogo size={56} />
-              <div className="text-left">
-                <div className="text-2xl font-bold tracking-tight leading-tight">ProNutro</div>
-                <div className="text-green-200 text-sm">Nutrologia e Terapias Integrativas</div>
-              </div>
-            </div>
+          <div className="bg-gradient-to-r from-brand to-brand-dark px-6 py-6 flex justify-center">
+            <ProNutroLogo width={240} textColor="#ffffff" />
           </div>
 
           {/* Contrato */}

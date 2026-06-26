@@ -91,12 +91,9 @@ export default function NovoPaciente() {
   return (
     <div className="max-w-2xl mx-auto">
       {/* Header card */}
-      <div className="bg-gradient-to-r from-brand to-brand-dark rounded-2xl p-5 mb-6 text-white flex items-center gap-4 shadow-md">
-        <ProNutroLogo size={52} />
-        <div>
-          <h1 className="text-xl font-bold leading-tight">Novo Paciente</h1>
-          <p className="text-green-200 text-sm mt-0.5">O contrato LGPD será enviado por email automaticamente</p>
-        </div>
+      <div className="bg-gradient-to-r from-brand to-brand-dark rounded-2xl p-5 mb-6 text-white shadow-md">
+        <ProNutroLogo width={220} textColor="#ffffff" />
+        <p className="text-green-200 text-sm mt-3">Novo paciente — contrato LGPD enviado por e-mail e WhatsApp automaticamente</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
