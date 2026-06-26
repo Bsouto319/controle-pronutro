@@ -15,6 +15,7 @@ export default function Contrato() {
   const [signing, setSigning] = useState(false)
   const [done, setDone] = useState(false)
   const [error, setError] = useState('')
+  const [lgpdConsent, setLgpdConsent] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -140,19 +141,47 @@ export default function Contrato() {
               <h3 className="font-semibold text-gray-800">CLÁUSULA 5ª — RESCISÃO</h3>
               <p>O paciente pode rescindir o contrato a qualquer tempo. Não haverá devolução de valores pagos por sessões realizadas. Ausência de mais de 2 sessões seguidas sem justificativa resulta em suspensão definitiva.</p>
 
-              <h3 className="font-semibold text-gray-800">CLÁUSULA 6ª — LGPD</h3>
-              <p>Seus dados são protegidos conforme a Lei Geral de Proteção de Dados (Lei 13.709/2018) e serão utilizados exclusivamente para fins do tratamento.</p>
+              <h3 className="font-semibold text-gray-800">CLÁUSULA 6ª — PROTEÇÃO DE DADOS PESSOAIS (LGPD)</h3>
+              <p>Em conformidade com a <strong>Lei Geral de Proteção de Dados Pessoais — Lei nº 13.709/2018 (LGPD)</strong>, a Clínica ProNutro, na qualidade de <strong>controladora de dados</strong>, informa:</p>
+              <p><strong>6.1 Dados coletados:</strong> Nome completo, CPF, e-mail, telefone, dados de saúde (histórico médico, dosagens, aplicações, prontuário), assinatura eletrônica e registros de IP/data de acesso.</p>
+              <p><strong>6.2 Finalidades e bases legais:</strong> (a) Execução do contrato de prestação de serviços — art. 7º, V da LGPD; (b) Cumprimento de obrigação legal (prontuário médico — CFM) — art. 7º, II; (c) Proteção da saúde do titular — art. 11, II, "f"; (d) Comunicações sobre o tratamento — mediante consentimento — art. 7º, I.</p>
+              <p><strong>6.3 Compartilhamento:</strong> Os dados poderão ser compartilhados com o médico prescritor responsável e, quando exigido por lei, com autoridades sanitárias. Não serão vendidos ou cedidos a terceiros para fins comerciais.</p>
+              <p><strong>6.4 Retenção:</strong> Os dados serão mantidos pelo prazo mínimo de 5 (cinco) anos após o encerramento do tratamento, conforme obrigação legal de guarda de prontuários médicos (CFM 1.821/2007).</p>
+              <p><strong>6.5 Direitos do titular:</strong> O paciente pode, a qualquer tempo, solicitar: confirmação da existência do tratamento, acesso aos dados, correção, portabilidade, anonimização, bloqueio ou eliminação dos dados desnecessários, revogação do consentimento e oposição ao tratamento. Solicitações devem ser encaminhadas à clínica por escrito.</p>
+              <p><strong>6.6 Segurança:</strong> A Clínica ProNutro adota medidas técnicas e administrativas para proteger os dados contra acessos não autorizados, destruição ou alteração indevida.</p>
             </div>
 
             <div className="border-t border-gray-200 pt-4 mt-4">
               <p className="text-gray-600 text-xs mb-1">
                 Brasília/DF, {format(new Date(), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
               </p>
-              <p className="text-gray-800 font-medium mb-3">
+              <p className="text-gray-800 font-medium mb-4">
                 Declaro ter lido, compreendido e concordado com todas as cláusulas acima. Assine abaixo:
               </p>
 
-              <div className="mb-2">
+              {/* Consentimento LGPD — deve ser aceito antes de assinar */}
+              <div className={`rounded-xl border p-4 mb-4 transition-colors ${lgpdConsent ? 'bg-green-50 border-green-300' : 'bg-blue-50 border-blue-200'}`}>
+                <p className="text-gray-800 font-semibold text-sm mb-2">Consentimento LGPD — obrigatório</p>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={lgpdConsent}
+                    onChange={(e) => setLgpdConsent(e.target.checked)}
+                    className="mt-0.5 w-5 h-5 accent-green-600 flex-shrink-0"
+                  />
+                  <span className="text-gray-700 text-xs leading-relaxed">
+                    Declaro que fui informado(a) sobre a coleta e uso dos meus dados pessoais e de saúde pela Clínica ProNutro, conforme a <strong>Cláusula 6ª</strong> acima, e <strong>consinto expressamente</strong> com o tratamento dos meus dados para prestação do serviço médico, acompanhamento do tratamento e comunicações relacionadas, nos termos da <strong>Lei nº 13.709/2018 (LGPD)</strong>.
+                  </span>
+                </label>
+              </div>
+
+              {!lgpdConsent && (
+                <p className="text-xs text-blue-600 text-center mb-4">
+                  Marque o consentimento LGPD acima para liberar a assinatura.
+                </p>
+              )}
+
+              <div className={`mb-4 transition-opacity ${lgpdConsent ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
                 <label className="text-xs text-gray-500 block mb-1">Assinatura do Paciente — {patient?.nome}</label>
                 <SignaturePad ref={sigRef} />
                 <button
@@ -168,14 +197,14 @@ export default function Contrato() {
 
               <button
                 onClick={sign}
-                disabled={signing}
-                className="w-full bg-brand text-white py-3 rounded-xl font-semibold text-base hover:bg-brand-dark transition-colors disabled:opacity-60"
+                disabled={signing || !lgpdConsent}
+                className="w-full bg-brand text-white py-3 rounded-xl font-semibold text-base hover:bg-brand-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {signing ? 'Registrando assinatura...' : 'Confirmar Assinatura e Aceitar Contrato'}
               </button>
 
               <p className="text-xs text-gray-400 text-center mt-2">
-                Ao confirmar, você concorda com os termos acima. Registro: IP + data/hora.
+                Ao confirmar, você concorda com todos os termos acima. Registro: IP + data/hora.
               </p>
             </div>
           </div>
