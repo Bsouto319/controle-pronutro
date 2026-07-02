@@ -6,6 +6,7 @@ import Admin from './pages/Admin'
 import NovoPaciente from './pages/NovoPaciente'
 import Contrato from './pages/Contrato'
 import Paciente from './pages/Paciente'
+import Usuarios from './pages/Usuarios'
 import LoginPage from './pages/LoginPage'
 import ResetSenha from './pages/ResetSenha'
 
@@ -48,6 +49,11 @@ export default function App() {
         <Route path="/paciente/:id" element={
           <ProtectedRoute>
             <Layout><Paciente /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/usuarios" element={
+          <ProtectedRoute>
+            <Layout><Usuarios /></Layout>
           </ProtectedRoute>
         } />
       </Routes>

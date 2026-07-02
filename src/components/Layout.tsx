@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import ProNutroLogo from './ProNutroLogo'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useIsAdmin } from '../hooks/useIsAdmin'
 
 function TrocarSenhaModal({ onClose }: { onClose: () => void }) {
   const [pwd, setPwd] = useState('')
@@ -59,6 +60,7 @@ function TrocarSenhaModal({ onClose }: { onClose: () => void }) {
 export default function Layout({ children }: { readonly children: React.ReactNode }) {
   const { pathname } = useLocation()
   const { user } = useAuth()
+  const { isAdmin } = useIsAdmin()
   const firstName = user?.user_metadata?.name ?? user?.email?.split('@')[0] ?? 'Admin'
   const [showPwd, setShowPwd] = useState(false)
 
@@ -105,6 +107,7 @@ export default function Layout({ children }: { readonly children: React.ReactNod
               <span className="hidden sm:inline">Novo Paciente</span>
               <span className="sm:hidden">Novo</span>
             </Link>
+            {isAdmin && navItem('/usuarios', 'Usuários', '👤')}
             <div className="flex items-center gap-2 ml-2 pl-2 border-l border-gray-200">
               <span className="hidden sm:inline text-xs text-gray-400">{firstName}</span>
               <button
