@@ -121,6 +121,30 @@ export default function Paciente() {
     }
   }
 
+  async function removerReceita() {
+    if (!confirm('Remover a receita médica anexada? Isso apaga o arquivo definitivamente.')) return
+    setUploadingPdf(1)
+    try {
+      const { data: files } = await supabase.storage.from('receitas').list(id)
+      const alvos = (files ?? []).filter(f => f.name.startsWith('semana_1')).map(f => `${id}/${f.name}`)
+      if (alvos.length) {
+        const { error } = await supabase.storage.from('receitas').remove(alvos)
+        if (error) throw error
+      }
+      const existing = doses.find(d => d.semana === 1)
+      if (existing) {
+        await supabase.from('pronutro_dose_records').update({ receita_url: null }).eq('id', existing.id)
+      }
+      setDoseForm(f => ({ ...f, 1: { ...f[1], receita_url: null } }))
+      setDoses(prev => prev.map(d => d.semana === 1 ? { ...d, receita_url: null } : d))
+    } catch (err) {
+      alert('Erro ao remover o anexo.')
+      console.error(err)
+    } finally {
+      setUploadingPdf(null)
+    }
+  }
+
   async function savePurchase() {
     if (!purchaseForm.quantidade_mg || !purchaseForm.data_compra) return
     setSavingPurchase(true)
@@ -697,6 +721,16 @@ export default function Paciente() {
                       >
                         📄 {semana === 1 ? 'Ver receita anexada' : 'Ver / baixar receita (da 1ª semana)'}
                       </a>
+                    )}
+                    {receitaUrl && semana === 1 && (
+                      <button
+                        type="button"
+                        onClick={removerReceita}
+                        disabled={uploadingPdf === 1}
+                        className="inline-flex items-center gap-1 text-xs text-red-500 hover:underline disabled:opacity-50"
+                      >
+                        🗑️ Remover anexo
+                      </button>
                     )}
                   </div>
                 </div>
