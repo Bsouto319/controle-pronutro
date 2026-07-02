@@ -25,12 +25,18 @@ export interface Contract {
 
 export interface Purchase {
   id: string
-  patient_id: string
+  patient_id: string | null
   data_compra: string
   quantidade_mg: number
   lote: string | null
   observacoes: string | null
   created_at: string
+}
+
+export interface EstoqueConfig {
+  id: number
+  estoque_alerta_mg: number
+  updated_at: string
 }
 
 export interface DoseRecord {
