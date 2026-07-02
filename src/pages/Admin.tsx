@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import type { Patient, Contract } from '../types'
+import type { Patient, Contract, DoseRecord } from '../types'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import ImportCSVModal from '../components/ImportCSVModal'
 
 interface PatientWithContract extends Patient {
   contract?: Contract
+  doses: DoseRecord[]
 }
 
 const statusBadge = (status?: string) => {
@@ -24,6 +25,7 @@ export default function Admin() {
   const [patients, setPatients] = useState<PatientWithContract[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [filterDate, setFilterDate] = useState('')
   const [tab, setTab] = useState<FilterTab>('ativos')
   const [showImport, setShowImport] = useState(false)
 
@@ -40,9 +42,14 @@ export default function Admin() {
         .from('pronutro_contracts')
         .select('*')
 
+      const { data: doses } = await supabase
+        .from('pronutro_dose_records')
+        .select('*')
+
       const merged = pts.map((p) => ({
         ...p,
         contract: contracts?.find((c) => c.patient_id === p.id),
+        doses: doses?.filter((d) => d.patient_id === p.id) ?? [],
       }))
       setPatients(merged)
       setLoading(false)
@@ -82,8 +89,8 @@ export default function Admin() {
 
   const filtered = byTab.filter(
     (p) =>
-      p.nome.toLowerCase().includes(search.toLowerCase()) ||
-      p.cpf.includes(search)
+      (p.nome.toLowerCase().includes(search.toLowerCase()) || p.cpf.includes(search)) &&
+      (!filterDate || p.doses.some((d) => d.data_aplicacao === filterDate))
   )
 
   const totalSigned = ativos.filter((p) => p.contract?.status === 'signed').length
@@ -94,7 +101,12 @@ export default function Admin() {
     const { data: pts } = await supabase.from('pronutro_patients').select('*').order('created_at', { ascending: false })
     if (!pts) return setLoading(false)
     const { data: contracts } = await supabase.from('pronutro_contracts').select('*')
-    setPatients(pts.map((p) => ({ ...p, contract: contracts?.find((c) => c.patient_id === p.id) })))
+    const { data: doses } = await supabase.from('pronutro_dose_records').select('*')
+    setPatients(pts.map((p) => ({
+      ...p,
+      contract: contracts?.find((c) => c.patient_id === p.id),
+      doses: doses?.filter((d) => d.patient_id === p.id) ?? [],
+    })))
     setLoading(false)
   }
 
@@ -143,6 +155,24 @@ export default function Admin() {
             className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/40 bg-white"
           />
         </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={filterDate}
+            onChange={(e) => setFilterDate(e.target.value)}
+            title="Filtrar por data de aplicação da dose"
+            className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/40 bg-white"
+          />
+          {filterDate && (
+            <button
+              onClick={() => setFilterDate('')}
+              title="Limpar filtro de data"
+              className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-500 hover:bg-gray-50 bg-white"
+            >
+              ✕
+            </button>
+          )}
+        </div>
         <div className="flex gap-2">
           <button
             onClick={() => setShowImport(true)}
@@ -177,7 +207,9 @@ export default function Admin() {
           <div className="text-4xl mb-3">🌿</div>
           <p className="text-gray-600 font-medium">Nenhum paciente encontrado</p>
           <p className="text-gray-400 text-sm mt-1 mb-4">
-            {search ? 'Tente buscar por outro nome ou CPF.' : 'Comece cadastrando o primeiro paciente.'}
+            {filterDate
+              ? `Nenhum paciente tomou dose em ${format(new Date(filterDate + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}.`
+              : search ? 'Tente buscar por outro nome ou CPF.' : 'Comece cadastrando o primeiro paciente.'}
           </p>
           {!search && (
             <Link to="/novo-paciente" className="inline-flex items-center gap-1 text-brand underline text-sm font-medium">
@@ -258,7 +290,10 @@ export default function Admin() {
             </table>
             {filtered.length > 0 && (
               <div className="px-5 py-2.5 bg-gray-50 border-t border-gray-100 text-xs text-gray-400">
-                {filtered.length} paciente{filtered.length !== 1 ? 's' : ''} {search ? 'encontrado' : 'cadastrado'}{filtered.length !== 1 ? 's' : ''}
+                {filtered.length} paciente{filtered.length !== 1 ? 's' : ''}
+                {filterDate
+                  ? ` tomou/tomaram dose em ${format(new Date(filterDate + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}`
+                  : ` ${search ? 'encontrado' : 'cadastrado'}${filtered.length !== 1 ? 's' : ''}`}
               </div>
             )}
           </div>

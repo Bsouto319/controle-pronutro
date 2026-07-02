@@ -147,6 +147,7 @@ export default function Paciente() {
     const data = doseForm[semana]
     const sig = sigRefs.current[semana]
     const sigData = sig && !sig.isEmpty() ? sig.toDataURL() : (data.assinatura_paciente ?? null)
+    const receitaSemana1 = doseForm[1]?.receita_url ?? doses.find(d => d.semana === 1)?.receita_url ?? null
 
     const payload: Partial<DoseRecord> & { patient_id: string; semana: number } = {
       patient_id: id!,
@@ -159,7 +160,7 @@ export default function Paciente() {
       lote: data.lote ?? null,
       observacoes: data.observacoes ?? null,
       assinatura_paciente: sigData,
-      receita_url: data.receita_url ?? null,
+      receita_url: data.receita_url ?? (semana > 1 ? receitaSemana1 : null),
     }
 
     const existing = doses.find((d) => d.semana === semana)
@@ -565,7 +566,8 @@ export default function Paciente() {
             const isSaved = !!saved?.data_aplicacao
             const doseSemana = Number(saved?.dose_mg ?? 0)
             const saldoAposEsta = totalComprado - doses.filter(d => d.semana <= semana && d.dose_mg).reduce((a, d) => a + Number(d.dose_mg), 0)
-            const receitaUrl = (form.receita_url ?? saved?.receita_url) ?? null
+            const receitaSemana1 = doseForm[1]?.receita_url ?? doses.find(d => d.semana === 1)?.receita_url ?? null
+            const receitaUrl = (form.receita_url ?? saved?.receita_url) ?? (semana > 1 ? receitaSemana1 : null)
 
             return (
               <div
@@ -660,36 +662,40 @@ export default function Paciente() {
                     placeholder="Reações, intercorrências..." />
                 </div>
 
-                {/* Receita médica PDF */}
+                {/* Receita médica PDF — anexo único, feito apenas na 1ª semana */}
                 <div className="mb-3 pt-2 border-t border-gray-100">
                   <label className="text-xs text-gray-500 block mb-1.5">Receita médica (PDF)</label>
                   <div className="flex items-center gap-3 flex-wrap">
-                    <label className={`cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
-                      uploadingPdf === semana
-                        ? 'opacity-50 cursor-not-allowed border-gray-200 text-gray-400'
-                        : 'border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'
-                    }`}>
-                      📎 {uploadingPdf === semana ? 'Enviando...' : receitaUrl ? 'Substituir PDF' : 'Anexar PDF'}
-                      <input
-                        type="file"
-                        accept=".pdf,application/pdf"
-                        className="sr-only"
-                        disabled={uploadingPdf === semana}
-                        onChange={e => {
-                          const file = e.target.files?.[0]
-                          if (file) uploadReceita(semana, file)
-                          e.target.value = ''
-                        }}
-                      />
-                    </label>
+                    {semana === 1 ? (
+                      <label className={`cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                        uploadingPdf === semana
+                          ? 'opacity-50 cursor-not-allowed border-gray-200 text-gray-400'
+                          : 'border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'
+                      }`}>
+                        📎 {uploadingPdf === semana ? 'Enviando...' : receitaUrl ? 'Substituir PDF' : 'Anexar PDF'}
+                        <input
+                          type="file"
+                          accept=".pdf,application/pdf"
+                          className="sr-only"
+                          disabled={uploadingPdf === semana}
+                          onChange={e => {
+                            const file = e.target.files?.[0]
+                            if (file) uploadReceita(semana, file)
+                            e.target.value = ''
+                          }}
+                        />
+                      </label>
+                    ) : !receitaUrl ? (
+                      <span className="text-xs text-gray-400">Nenhuma receita anexada na 1ª semana ainda.</span>
+                    ) : null}
                     {receitaUrl && (
                       <a
-                        href={receitaUrl}
+                        href={`${receitaUrl}${receitaUrl.includes('?') ? '&' : '?'}download=`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 text-xs text-brand hover:underline"
                       >
-                        📄 Ver receita anexada
+                        📄 {semana === 1 ? 'Ver receita anexada' : 'Ver / baixar receita (da 1ª semana)'}
                       </a>
                     )}
                   </div>
