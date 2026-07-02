@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Purchase, DoseRecord, EstoqueConfig, Patient } from '../types'
-import { format } from 'date-fns'
+import { format, startOfWeek, endOfWeek } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
 interface PurchaseWithPatient extends Purchase {
   paciente_nome?: string | null
+}
+
+function parseDate(d: string) {
+  return new Date(d + 'T12:00:00')
 }
 
 export default function Estoque() {
@@ -22,7 +26,7 @@ export default function Estoque() {
     setLoading(true)
     const [{ data: pur }, { data: dos }, { data: cfg }, { data: patients }] = await Promise.all([
       supabase.from('pronutro_purchases').select('*').order('data_compra', { ascending: false }),
-      supabase.from('pronutro_dose_records').select('*').not('data_aplicacao', 'is', null),
+      supabase.from('pronutro_dose_records').select('*'),
       supabase.from('pronutro_config').select('*').eq('id', 1).single(),
       supabase.from('pronutro_patients').select('id, nome'),
     ])
@@ -36,11 +40,28 @@ export default function Estoque() {
 
   useEffect(() => { load() }, [])
 
-  const totalComprado = purchases.reduce((acc, p) => acc + Number(p.quantidade_mg), 0)
-  const totalAplicado = doses.reduce((acc, d) => acc + Number(d.dose_mg ?? 0), 0)
-  const saldo = totalComprado - totalAplicado
+  // Estoque bruto = o que a clínica comprou do fornecedor (entradas gerais, sem paciente vinculado)
+  const estoqueBruto = purchases.filter(p => !p.patient_id).reduce((acc, p) => acc + Number(p.quantidade_mg), 0)
+  // Vendido/alocado a pacientes = o que já foi "vendido" a cada paciente, sai do estoque bruto da clínica
+  const vendidoPacientes = purchases.filter(p => !!p.patient_id).reduce((acc, p) => acc + Number(p.quantidade_mg), 0)
+  const saldo = estoqueBruto - vendidoPacientes
   const alertaMg = config?.estoque_alerta_mg ?? 50
   const emAlerta = saldo <= alertaMg
+
+  // Previsão da semana: pacientes com dose aplicada OU marcada (próxima aplicação) dentro da semana atual
+  const inicioSemana = startOfWeek(new Date(), { weekStartsOn: 1 })
+  const fimSemana = endOfWeek(new Date(), { weekStartsOn: 1 })
+  const dentroDaSemana = (d: string | null) => {
+    if (!d) return false
+    const data = parseDate(d)
+    return data >= inicioSemana && data <= fimSemana
+  }
+  const necessarioSemana = doses.reduce((acc, d) => {
+    if (dentroDaSemana(d.data_aplicacao)) return acc + Number(d.dose_mg ?? 0)
+    if (!d.data_aplicacao && dentroDaSemana(d.proxima_data_aplicacao)) return acc + Number(d.proxima_dose_mg ?? 0)
+    return acc
+  }, 0)
+  const cobreSemana = saldo >= necessarioSemana
 
   async function savePurchase() {
     if (!purchaseForm.quantidade_mg || !purchaseForm.data_compra) return
@@ -76,7 +97,7 @@ export default function Estoque() {
     <div className="max-w-3xl mx-auto space-y-6">
       <div>
         <h1 className="text-xl font-bold text-gray-800">Controle de Estoque — Tirzepatida</h1>
-        <p className="text-sm text-gray-400 mt-0.5">Estoque geral da clínica (todas as compras e aplicações).</p>
+        <p className="text-sm text-gray-400 mt-0.5">Estoque bruto da clínica (o que foi comprado do fornecedor) menos o que já foi vendido/alocado aos pacientes.</p>
       </div>
 
       {emAlerta && (
@@ -92,17 +113,33 @@ export default function Estoque() {
       {/* Stats */}
       <div className="grid grid-cols-3 gap-2 sm:gap-3">
         <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 sm:p-4 text-center">
-          <p className="text-xs text-blue-500 font-medium mb-1">Comprado</p>
-          <p className="text-lg sm:text-2xl font-bold text-blue-700">{totalComprado} mg</p>
+          <p className="text-xs text-blue-500 font-medium mb-1">Estoque bruto (fornecedor)</p>
+          <p className="text-lg sm:text-2xl font-bold text-blue-700">{estoqueBruto} mg</p>
         </div>
         <div className="bg-orange-50 border border-orange-100 rounded-xl p-3 sm:p-4 text-center">
-          <p className="text-xs text-orange-500 font-medium mb-1">Aplicado</p>
-          <p className="text-lg sm:text-2xl font-bold text-orange-700">{totalAplicado} mg</p>
+          <p className="text-xs text-orange-500 font-medium mb-1">Vendido a pacientes</p>
+          <p className="text-lg sm:text-2xl font-bold text-orange-700">{vendidoPacientes} mg</p>
         </div>
         <div className={`border rounded-xl p-3 sm:p-4 text-center ${emAlerta ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-100'}`}>
-          <p className={`text-xs font-medium mb-1 ${emAlerta ? 'text-red-500' : 'text-green-500'}`}>Saldo</p>
+          <p className={`text-xs font-medium mb-1 ${emAlerta ? 'text-red-500' : 'text-green-500'}`}>Saldo da clínica</p>
           <p className={`text-lg sm:text-2xl font-bold ${emAlerta ? 'text-red-700' : 'text-green-700'}`}>{saldo} mg</p>
         </div>
+      </div>
+
+      {/* Previsão da semana */}
+      <div className={`rounded-2xl border p-5 ${cobreSemana ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+        <h2 className="text-sm font-bold text-gray-700 mb-1">
+          Previsão desta semana ({format(inicioSemana, 'dd/MM', { locale: ptBR })} a {format(fimSemana, 'dd/MM', { locale: ptBR })})
+        </h2>
+        <p className="text-sm text-gray-600">
+          Pacientes marcados ou que já tomaram essa semana precisam de <strong>{necessarioSemana} mg</strong>.
+          O saldo atual da clínica é <strong>{saldo} mg</strong>.
+        </p>
+        <p className={`text-sm font-bold mt-2 ${cobreSemana ? 'text-green-700' : 'text-red-700'}`}>
+          {cobreSemana
+            ? `✅ Dá — sobra ${(saldo - necessarioSemana).toFixed(2)} mg depois de atender todos.`
+            : `⚠️ Não dá — falta ${(necessarioSemana - saldo).toFixed(2)} mg para atender todos essa semana.`}
+        </p>
       </div>
 
       {/* Alerta mínimo */}
@@ -128,7 +165,8 @@ export default function Estoque() {
 
       {/* Registrar entrada */}
       <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-        <h2 className="text-sm font-bold text-gray-700 mb-3">+ Registrar Nova Entrada</h2>
+        <h2 className="text-sm font-bold text-gray-700 mb-1">+ Registrar Compra da Clínica</h2>
+        <p className="text-xs text-gray-400 mb-3">Use aqui apenas para compras do fornecedor (estoque bruto). Compras vinculadas a um paciente específico continuam sendo lançadas na página do paciente.</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div>
             <label className="text-xs text-gray-500 block mb-1">Data da compra *</label>
@@ -138,7 +176,7 @@ export default function Estoque() {
           </div>
           <div>
             <label className="text-xs text-gray-500 block mb-1">Quantidade (mg) *</label>
-            <input type="number" step="0.5" placeholder="Ex: 100" value={purchaseForm.quantidade_mg}
+            <input type="number" step="0.5" placeholder="Ex: 500" value={purchaseForm.quantidade_mg}
               onChange={(e) => setPurchaseForm(f => ({ ...f, quantidade_mg: e.target.value }))}
               className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
           </div>
@@ -157,23 +195,27 @@ export default function Estoque() {
         </div>
         <button onClick={savePurchase} disabled={savingPurchase || !purchaseForm.quantidade_mg || !purchaseForm.data_compra}
           className="mt-3 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50">
-          {savingPurchase ? 'Salvando...' : '+ Registrar Entrada'}
+          {savingPurchase ? 'Salvando...' : '+ Registrar Compra'}
         </button>
       </div>
 
       {/* Histórico */}
       <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-        <h2 className="text-sm font-bold text-gray-700 mb-3">Histórico de Entradas</h2>
+        <h2 className="text-sm font-bold text-gray-700 mb-3">Histórico de Movimentações</h2>
         {purchases.length === 0 ? (
           <p className="text-sm text-gray-400">Nenhuma entrada registrada ainda.</p>
         ) : (
           <div className="space-y-1.5">
             {purchases.map((pur) => (
-              <div key={pur.id} className="flex items-start justify-between gap-2 bg-blue-50/50 border border-blue-100 rounded-lg px-3 py-2 text-sm">
+              <div key={pur.id} className={`flex items-start justify-between gap-2 border rounded-lg px-3 py-2 text-sm ${pur.patient_id ? 'bg-orange-50/50 border-orange-100' : 'bg-blue-50/50 border-blue-100'}`}>
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 min-w-0">
-                  <span className="text-blue-600 font-semibold">+{pur.quantidade_mg} mg</span>
-                  <span className="text-gray-600">{format(new Date(pur.data_compra + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}</span>
-                  {pur.paciente_nome && <span className="text-gray-400 text-xs">Paciente: {pur.paciente_nome}</span>}
+                  <span className={`font-semibold ${pur.patient_id ? 'text-orange-600' : 'text-blue-600'}`}>
+                    {pur.patient_id ? '−' : '+'}{pur.quantidade_mg} mg
+                  </span>
+                  <span className="text-gray-600">{format(parseDate(pur.data_compra), 'dd/MM/yyyy', { locale: ptBR })}</span>
+                  {pur.patient_id
+                    ? <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">Vendido: {pur.paciente_nome ?? 'paciente'}</span>
+                    : <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">Compra clínica</span>}
                   {pur.lote && <span className="text-gray-400 text-xs">Lote: {pur.lote}</span>}
                   {pur.observacoes && <span className="text-gray-400 text-xs truncate max-w-[160px]">{pur.observacoes}</span>}
                 </div>
