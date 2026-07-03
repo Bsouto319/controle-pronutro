@@ -87,11 +87,13 @@ export default function Admin() {
 
   const byTab = tab === 'ativos' ? ativos : tab === 'inativos' ? inativos : patients
 
-  const filtered = byTab.filter(
-    (p) =>
-      (p.nome.toLowerCase().includes(search.toLowerCase()) || p.cpf.includes(search)) &&
-      (!filterDate || p.doses.some((d) => d.data_aplicacao === filterDate))
-  )
+  const filtered = byTab
+    .filter(
+      (p) =>
+        (p.nome.toLowerCase().includes(search.toLowerCase()) || p.cpf.includes(search)) &&
+        (!filterDate || p.doses.some((d) => d.data_aplicacao === filterDate))
+    )
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }))
 
   const totalSigned = ativos.filter((p) => p.contract?.status === 'signed').length
   const totalPending = ativos.filter((p) => !p.contract || p.contract.status === 'pending').length

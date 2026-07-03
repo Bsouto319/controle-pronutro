@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import SignaturePad, { type SignaturePadHandle } from '../components/SignaturePad'
 import EvolucaoChart from '../components/EvolucaoChart'
+import { useIsAdmin } from '../hooks/useIsAdmin'
 import type { Patient, Contract, DoseRecord, Purchase, EvolucaoRecord } from '../types'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -18,6 +19,7 @@ const statusBadge = (status?: string) => {
 export default function Paciente() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { isAdmin } = useIsAdmin()
   const [patient, setPatient] = useState<Patient | null>(null)
   const [contract, setContract] = useState<Contract | null>(null)
   const [doses, setDoses] = useState<DoseRecord[]>([])
@@ -592,17 +594,34 @@ export default function Paciente() {
             const saldoAposEsta = totalComprado - doses.filter(d => d.semana <= semana && d.dose_mg).reduce((a, d) => a + Number(d.dose_mg), 0)
             const receitaSemana1 = doseForm[1]?.receita_url ?? doses.find(d => d.semana === 1)?.receita_url ?? null
             const receitaUrl = (form.receita_url ?? saved?.receita_url) ?? (semana > 1 ? receitaSemana1 : null)
+            const isPrimeira = semana === 1
+            // Depois de preenchida, só admin pode editar — evita troca acidental de semana pela equipe
+            const canEdit = !isSaved || isAdmin
+            const inputCls = `w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand ${!canEdit ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`
 
             return (
               <div
                 key={semana}
                 id={`semana-${semana}`}
-                className={`border rounded-xl p-4 transition-colors ${isSaved ? 'border-green-200 bg-green-50/30' : 'border-gray-200'}`}
+                className={`border rounded-xl p-4 transition-colors ${
+                  isPrimeira
+                    ? 'border-blue-300 bg-blue-50/40 ring-1 ring-blue-200'
+                    : isSaved ? 'border-green-200 bg-green-50/30' : 'border-gray-200'
+                }`}
               >
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-gray-700">
-                    {semana}ª Semana / Retorno
-                    {isSaved && <span className="ml-2 text-xs text-green-600 font-normal">✓ Aplicada</span>}
+                  <h3 className="font-semibold text-gray-700 flex items-center gap-2">
+                    {isPrimeira ? (
+                      <span className="inline-flex items-center gap-1 bg-blue-600 text-white text-xs font-bold px-2.5 py-1 rounded-full">
+                        🔑 1ª DOSE — INICIAL
+                      </span>
+                    ) : (
+                      <span>{semana}ª Semana / Retorno</span>
+                    )}
+                    {isSaved && <span className="ml-1 text-xs text-green-600 font-normal">✓ Aplicada</span>}
+                    {isSaved && !isAdmin && (
+                      <span className="ml-1 text-xs text-gray-400 font-normal" title="Só admin pode editar depois de preenchido">🔒 bloqueado p/ edição</span>
+                    )}
                   </h3>
                   {isSaved && doseSemana > 0 && (
                     <span className="text-xs text-gray-400">
@@ -617,31 +636,35 @@ export default function Paciente() {
                     <label className="text-xs text-gray-500 block mb-1">Dose aplicada (mg)</label>
                     <input type="number" step="0.5"
                       value={form.dose_mg ?? ''}
+                      disabled={!canEdit}
                       onChange={(e) => setField(semana, 'dose_mg', e.target.value)}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                      className={inputCls}
                       placeholder="2.5" />
                   </div>
                   <div>
                     <label className="text-xs text-gray-500 block mb-1">Próxima dose (mg)</label>
                     <input type="number" step="0.5"
                       value={form.proxima_dose_mg ?? ''}
+                      disabled={!canEdit}
                       onChange={(e) => setField(semana, 'proxima_dose_mg', e.target.value)}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                      className={inputCls}
                       placeholder="5.0" />
                   </div>
                   <div>
                     <label className="text-xs text-gray-500 block mb-1">Data da aplicação</label>
                     <input type="date"
                       value={form.data_aplicacao ?? ''}
+                      disabled={!canEdit}
                       onChange={(e) => setField(semana, 'data_aplicacao', e.target.value)}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+                      className={inputCls} />
                   </div>
                   <div>
                     <label className="text-xs text-gray-500 block mb-1">Lote</label>
                     <input type="text"
                       value={form.lote ?? ''}
+                      disabled={!canEdit}
                       onChange={(e) => setField(semana, 'lote', e.target.value)}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                      className={inputCls}
                       placeholder="AB1234" />
                   </div>
                 </div>
@@ -656,23 +679,26 @@ export default function Paciente() {
                     </label>
                     <input type="date"
                       value={form.proxima_data_aplicacao ?? ''}
+                      disabled={!canEdit}
                       onChange={(e) => setField(semana, 'proxima_data_aplicacao', e.target.value)}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+                      className={inputCls} />
                   </div>
                   <div>
                     <label className="text-xs text-gray-500 block mb-1">Peso (kg)</label>
                     <input type="number" step="0.1"
                       value={evolucaoForm[semana]?.peso_kg ?? ''}
+                      disabled={!canEdit}
                       onChange={(e) => setEvoField(semana, 'peso_kg', e.target.value)}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                      className={inputCls}
                       placeholder="75.5" />
                   </div>
                   <div>
                     <label className="text-xs text-gray-500 block mb-1">% Gordura <span className="text-gray-400">(opcional)</span></label>
                     <input type="number" step="0.1" min="0" max="100"
                       value={evolucaoForm[semana]?.gordura_pct ?? ''}
+                      disabled={!canEdit}
                       onChange={(e) => setEvoField(semana, 'gordura_pct', e.target.value)}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                      className={inputCls}
                       placeholder="28.5" />
                   </div>
                 </div>
@@ -681,8 +707,9 @@ export default function Paciente() {
                   <label className="text-xs text-gray-500 block mb-1">Observações</label>
                   <input type="text"
                     value={form.observacoes ?? ''}
+                    disabled={!canEdit}
                     onChange={(e) => setField(semana, 'observacoes', e.target.value)}
-                    className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                    className={inputCls}
                     placeholder="Reações, intercorrências..." />
                 </div>
 
@@ -741,7 +768,9 @@ export default function Paciente() {
                     <div>
                       <p className="text-xs text-gray-400 mb-1">Assinatura do paciente:</p>
                       <img src={saved.assinatura_paciente} alt="Assinatura" className="border border-gray-200 rounded max-h-16" />
-                      <button onClick={() => setActiveSig(semana)} className="text-xs text-brand hover:underline mt-1 block">Refazer</button>
+                      {canEdit && (
+                        <button onClick={() => setActiveSig(semana)} className="text-xs text-brand hover:underline mt-1 block">Refazer</button>
+                      )}
                     </div>
                   ) : (
                     <div>
@@ -754,10 +783,11 @@ export default function Paciente() {
 
                 <button
                   onClick={() => saveDose(semana)}
-                  disabled={saving === semana}
+                  disabled={saving === semana || !canEdit}
+                  title={!canEdit ? 'Só admin pode editar uma dose já preenchida' : undefined}
                   className="w-full sm:w-auto bg-brand text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-dark transition-colors disabled:opacity-60"
                 >
-                  {saving === semana ? 'Salvando...' : isSaved ? 'Atualizar' : 'Salvar Dose'}
+                  {!canEdit ? '🔒 Bloqueado (somente admin)' : saving === semana ? 'Salvando...' : isSaved ? 'Atualizar' : 'Salvar Dose'}
                 </button>
               </div>
             )
