@@ -616,7 +616,12 @@ export default function Paciente() {
                         🔑 1ª DOSE — INICIAL
                       </span>
                     ) : (
-                      <span>{semana}ª Semana / Retorno</span>
+                      <span className="inline-flex items-center gap-2">
+                        <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-orange-500 text-white text-sm font-black shadow-sm shrink-0">
+                          {semana}
+                        </span>
+                        <span>ª Semana / Retorno</span>
+                      </span>
                     )}
                     {isSaved && <span className="ml-1 text-xs text-green-600 font-normal">✓ Aplicada</span>}
                     {isSaved && !isAdmin && (
