@@ -606,7 +606,7 @@ export default function Paciente() {
                 className={`border rounded-xl p-4 transition-colors ${
                   isPrimeira
                     ? 'border-blue-300 bg-blue-50/40 ring-1 ring-blue-200'
-                    : isSaved ? 'border-green-200 bg-green-50/30' : 'border-gray-200'
+                    : isSaved ? 'border-green-200 bg-green-50/30' : 'border-amber-200 bg-amber-50/40'
                 }`}
               >
                 <div className="flex items-center justify-between mb-3">
@@ -624,6 +624,7 @@ export default function Paciente() {
                       </span>
                     )}
                     {isSaved && <span className="ml-1 text-xs text-green-600 font-normal">✓ Aplicada</span>}
+                    {!isSaved && <span className="ml-1 text-xs text-amber-600 font-semibold">● Pendente</span>}
                     {isSaved && !isAdmin && (
                       <span className="ml-1 text-xs text-gray-400 font-normal" title="Só admin pode editar depois de preenchido">🔒 bloqueado p/ edição</span>
                     )}
