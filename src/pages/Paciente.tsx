@@ -586,7 +586,11 @@ export default function Paciente() {
         </div>
 
         <div className="space-y-4">
-          {Array.from({ length: numSemanas }, (_, i) => i + 1).map((semana) => {
+          {(() => {
+            // Primeira semana sem data_aplicacao, em ordem — é a próxima que a equipe deve preencher
+            const primeiraPendente = Array.from({ length: numSemanas }, (_, i) => i + 1)
+              .find(s => !doses.find(d => d.semana === s)?.data_aplicacao)
+            return Array.from({ length: numSemanas }, (_, i) => i + 1).map((semana) => {
             const saved = doses.find((d) => d.semana === semana)
             const form = doseForm[semana] ?? {}
             const isSaved = !!saved?.data_aplicacao
@@ -595,6 +599,7 @@ export default function Paciente() {
             const receitaSemana1 = doseForm[1]?.receita_url ?? doses.find(d => d.semana === 1)?.receita_url ?? null
             const receitaUrl = (form.receita_url ?? saved?.receita_url) ?? (semana > 1 ? receitaSemana1 : null)
             const isPrimeira = semana === 1
+            const isProxima = semana === primeiraPendente
             // Depois de preenchida, só admin pode editar — evita troca acidental de semana pela equipe
             const canEdit = !isSaved || isAdmin
             const inputCls = `w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand ${!canEdit ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`
@@ -606,7 +611,8 @@ export default function Paciente() {
                 className={`border rounded-xl p-4 transition-colors ${
                   isPrimeira
                     ? 'border-blue-300 bg-blue-50/40 ring-1 ring-blue-200'
-                    : isSaved ? 'border-green-200 bg-green-50/30' : 'border-amber-200 bg-amber-50/40'
+                    : isSaved ? 'border-green-200 bg-green-50/30'
+                    : isProxima ? 'border-amber-400 bg-amber-50/60 ring-2 ring-amber-400 shadow-md' : 'border-amber-200 bg-amber-50/40'
                 }`}
               >
                 <div className="flex items-center justify-between mb-3">
@@ -623,8 +629,13 @@ export default function Paciente() {
                         <span>ª Semana / Retorno</span>
                       </span>
                     )}
-                    {isSaved && <span className="ml-1 text-xs text-green-600 font-normal">✓ Aplicada</span>}
-                    {!isSaved && <span className="ml-1 text-xs text-amber-600 font-semibold">● Pendente</span>}
+                    {isSaved && <span className="ml-1 text-xs text-green-600 font-normal">✓ Já preenchida</span>}
+                    {!isSaved && isProxima && (
+                      <span className="ml-1 inline-flex items-center gap-1 bg-amber-500 text-white text-xs font-bold px-2 py-0.5 rounded-full animate-pulse">
+                        👉 PRÓXIMA A PREENCHER
+                      </span>
+                    )}
+                    {!isSaved && !isProxima && <span className="ml-1 text-xs text-amber-500 font-normal">● Pendente</span>}
                     {isSaved && !isAdmin && (
                       <span className="ml-1 text-xs text-gray-400 font-normal" title="Só admin pode editar depois de preenchido">🔒 bloqueado p/ edição</span>
                     )}
@@ -797,7 +808,8 @@ export default function Paciente() {
                 </button>
               </div>
             )
-          })}
+          })
+          })()}
         </div>
 
         {/* Botão adicionar retorno */}
