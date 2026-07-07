@@ -60,18 +60,18 @@ export default function EvolucaoChart({ evolucao, doses }: Props) {
             yAxisId="peso"
             domain={[pesoMin, pesoMax]}
             tick={{ fontSize: 11, fill: '#16a34a' }}
-            tickFormatter={(v) => `${v}kg`}
+            tickFormatter={(v: number) => `${v}kg`}
             width={48}
           />
           <YAxis
             yAxisId="dose"
             orientation="right"
             tick={{ fontSize: 11, fill: '#ea580c' }}
-            tickFormatter={(v) => `${v}mg`}
+            tickFormatter={(v: number) => `${v}mg`}
             width={40}
           />
           <Tooltip
-            formatter={(value, name) => {
+            formatter={(value: any, name: any) => {
               if (name === 'Peso') return [`${value} kg`, name]
               if (name === 'Dose') return [`${value} mg`, name]
               if (name === '% Gordura') return [`${value}%`, name]
