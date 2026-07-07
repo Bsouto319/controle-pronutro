@@ -386,7 +386,7 @@ export default function Paciente() {
                 <label className="text-xs text-gray-500 block mb-1">Dosagem inicial (mg)</label>
                 <input
                   type="number"
-                  step="0.5"
+                  step="0.01"
                   value={editForm.dosagem_inicial_mg ?? ''}
                   onChange={e => setEditForm(f => ({ ...f, dosagem_inicial_mg: e.target.value ? Number(e.target.value) : null }))}
                   className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
@@ -651,7 +651,7 @@ export default function Paciente() {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mb-2">
                   <div>
                     <label className="text-xs text-gray-500 block mb-1">Dose aplicada (mg)</label>
-                    <input type="number" step="0.5"
+                    <input type="number" step="0.01"
                       value={form.dose_mg ?? ''}
                       disabled={!canEdit}
                       onChange={(e) => setField(semana, 'dose_mg', e.target.value)}
@@ -660,7 +660,7 @@ export default function Paciente() {
                   </div>
                   <div>
                     <label className="text-xs text-gray-500 block mb-1">Próxima dose (mg)</label>
-                    <input type="number" step="0.5"
+                    <input type="number" step="0.01"
                       value={form.proxima_dose_mg ?? ''}
                       disabled={!canEdit}
                       onChange={(e) => setField(semana, 'proxima_dose_mg', e.target.value)}

@@ -70,7 +70,7 @@ export default function NovoPaciente() {
       return
     }
 
-    const contractUrl = `${window.location.origin}/contrato/${contract.token}`
+    const contractUrl = `https://controle-pronutro.vercel.app/contrato/${contract.token}`
     await supabase.functions.invoke('send-contract-email', {
       body: {
         patient_name: patient.nome,
@@ -167,7 +167,7 @@ export default function NovoPaciente() {
               <div className="relative">
                 <input
                   type="number"
-                  step="0.5"
+                  step="0.01"
                   min="0"
                   value={form.dosagem_inicial_mg}
                   onChange={(e) => set('dosagem_inicial_mg', e.target.value)}
