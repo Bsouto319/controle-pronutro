@@ -14,6 +14,11 @@ function parseDate(d: string) {
   return new Date(d + 'T12:00:00')
 }
 
+// Evita "ruido" de ponto flutuante tipo -1492.7399999999998
+function round2(n: number) {
+  return Math.round(n * 100) / 100
+}
+
 export default function Estoque() {
   const { isAdmin, loading: loadingAdmin } = useIsAdmin()
   const [purchases, setPurchases] = useState<PurchaseWithPatient[]>([])
@@ -44,10 +49,10 @@ export default function Estoque() {
   useEffect(() => { load() }, [])
 
   // Estoque bruto = o que a clínica comprou do fornecedor (entradas gerais, sem paciente vinculado)
-  const estoqueBruto = purchases.filter(p => !p.patient_id).reduce((acc, p) => acc + Number(p.quantidade_mg), 0)
+  const estoqueBruto = round2(purchases.filter(p => !p.patient_id).reduce((acc, p) => acc + Number(p.quantidade_mg), 0))
   // Vendido/alocado a pacientes = o que já foi "vendido" a cada paciente, sai do estoque bruto da clínica
-  const vendidoPacientes = purchases.filter(p => !!p.patient_id).reduce((acc, p) => acc + Number(p.quantidade_mg), 0)
-  const saldo = estoqueBruto - vendidoPacientes
+  const vendidoPacientes = round2(purchases.filter(p => !!p.patient_id).reduce((acc, p) => acc + Number(p.quantidade_mg), 0))
+  const saldo = round2(estoqueBruto - vendidoPacientes)
   const alertaMg = config?.estoque_alerta_mg ?? 50
   const emAlerta = saldo <= alertaMg
 
@@ -59,11 +64,11 @@ export default function Estoque() {
     const data = parseDate(d)
     return data >= inicioSemana && data <= fimSemana
   }
-  const necessarioSemana = doses.reduce((acc, d) => {
+  const necessarioSemana = round2(doses.reduce((acc, d) => {
     if (dentroDaSemana(d.data_aplicacao)) return acc + Number(d.dose_mg ?? 0)
     if (!d.data_aplicacao && dentroDaSemana(d.proxima_data_aplicacao)) return acc + Number(d.proxima_dose_mg ?? 0)
     return acc
-  }, 0)
+  }, 0))
   const cobreSemana = saldo >= necessarioSemana
 
   async function savePurchase() {

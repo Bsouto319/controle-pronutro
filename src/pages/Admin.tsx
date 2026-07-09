@@ -66,7 +66,7 @@ export default function Admin() {
           ...p,
           contract: contracts?.find((c) => c.patient_id === p.id),
           doses: patientDoses,
-          saldo: comprado - aplicado,
+          saldo: Math.round((comprado - aplicado) * 100) / 100,
         }
       })
       setPatients(merged)
@@ -133,7 +133,7 @@ export default function Admin() {
         ...p,
         contract: contracts?.find((c) => c.patient_id === p.id),
         doses: patientDoses,
-        saldo: comprado - aplicado,
+        saldo: Math.round((comprado - aplicado) * 100) / 100,
       }
     }))
     setLoading(false)

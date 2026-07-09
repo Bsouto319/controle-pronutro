@@ -95,9 +95,10 @@ export default function Paciente() {
     }
   }, [loading, id])
 
-  const totalComprado = purchases.reduce((acc, p) => acc + Number(p.quantidade_mg), 0)
-  const totalAplicado = doses.reduce((acc, d) => acc + Number(d.dose_mg ?? 0), 0)
-  const saldo = totalComprado - totalAplicado
+  const round2 = (n: number) => Math.round(n * 100) / 100
+  const totalComprado = round2(purchases.reduce((acc, p) => acc + Number(p.quantidade_mg), 0))
+  const totalAplicado = round2(doses.reduce((acc, d) => acc + Number(d.dose_mg ?? 0), 0))
+  const saldo = round2(totalComprado - totalAplicado)
   const proximaSemana = doses.length + 1
 
   const setField = (semana: number, field: string, value: string) =>
@@ -674,7 +675,7 @@ export default function Paciente() {
             const form = doseForm[semana] ?? {}
             const isSaved = !!saved?.data_aplicacao
             const doseSemana = Number(saved?.dose_mg ?? 0)
-            const saldoAposEsta = totalComprado - doses.filter(d => d.semana <= semana && d.dose_mg).reduce((a, d) => a + Number(d.dose_mg), 0)
+            const saldoAposEsta = round2(totalComprado - doses.filter(d => d.semana <= semana && d.dose_mg).reduce((a, d) => a + Number(d.dose_mg), 0))
             const receitaSemana1 = doseForm[1]?.receita_url ?? doses.find(d => d.semana === 1)?.receita_url ?? null
             const receitaUrl = (form.receita_url ?? saved?.receita_url) ?? (semana > 1 ? receitaSemana1 : null)
             const isPrimeira = semana === 1
