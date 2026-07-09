@@ -82,6 +82,19 @@ export default function Paciente() {
 
   useEffect(() => { loadData() }, [id])
 
+  // Assim que abrir a ficha, já leva a equipe direto pra proxima dose a preencher
+  useEffect(() => {
+    if (loading) return
+    const primeiraPendente = Array.from({ length: numSemanas }, (_, i) => i + 1)
+      .find(s => !doses.find(d => d.semana === s)?.data_aplicacao)
+    if (!primeiraPendente) return
+    const el = document.getElementById(`semana-${primeiraPendente}`)
+    if (el) {
+      const t = setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150)
+      return () => clearTimeout(t)
+    }
+  }, [loading, id])
+
   const totalComprado = purchases.reduce((acc, p) => acc + Number(p.quantidade_mg), 0)
   const totalAplicado = doses.reduce((acc, d) => acc + Number(d.dose_mg ?? 0), 0)
   const saldo = totalComprado - totalAplicado
@@ -674,7 +687,7 @@ export default function Paciente() {
               <div
                 key={semana}
                 id={`semana-${semana}`}
-                className={`border rounded-xl p-4 transition-colors ${
+                className={`border rounded-xl p-4 transition-colors scroll-mt-24 ${
                   isPrimeira
                     ? 'border-blue-300 bg-blue-50/40 ring-1 ring-blue-200'
                     : isSaved ? 'border-green-200 bg-green-50/30'
