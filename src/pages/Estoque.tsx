@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { Navigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useIsAdmin } from '../hooks/useIsAdmin'
 import type { Purchase, DoseRecord, EstoqueConfig, Patient } from '../types'
 import { format, startOfWeek, endOfWeek } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -13,6 +15,7 @@ function parseDate(d: string) {
 }
 
 export default function Estoque() {
+  const { isAdmin, loading: loadingAdmin } = useIsAdmin()
   const [purchases, setPurchases] = useState<PurchaseWithPatient[]>([])
   const [doses, setDoses] = useState<DoseRecord[]>([])
   const [config, setConfig] = useState<EstoqueConfig | null>(null)
@@ -91,6 +94,8 @@ export default function Estoque() {
     load()
   }
 
+  if (loadingAdmin) return <div className="py-12 text-center text-gray-400">Carregando...</div>
+  if (!isAdmin) return <Navigate to="/" replace />
   if (loading) return <div className="py-12 text-center text-gray-400">Carregando...</div>
 
   return (

@@ -107,7 +107,7 @@ export default function Layout({ children }: { readonly children: React.ReactNod
               <span className="hidden sm:inline">Novo Paciente</span>
               <span className="sm:hidden">Novo</span>
             </Link>
-            {navItem('/estoque', 'Estoque', '💊')}
+            {isAdmin && navItem('/estoque', 'Estoque', '💊')}
             {isAdmin && navItem('/usuarios', 'Usuários', '👤')}
             <div className="flex items-center gap-2 ml-2 pl-2 border-l border-gray-200">
               <span className="hidden sm:inline text-xs text-gray-400">{firstName}</span>

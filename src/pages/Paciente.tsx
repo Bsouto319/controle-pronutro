@@ -258,17 +258,14 @@ export default function Paciente() {
 
   async function finalizarProtocolo() {
     if (!patient) return
-    const temReceita = doses.some(d => d.receita_url) || purchases.some(p => p.receita_url)
-    if (!temReceita) {
-      alert('Anexe a receita médica (na 1ª semana ou em algum registro de entrada) antes de finalizar o protocolo.')
-      return
-    }
     const aplicadas = doses.filter(d => d.dose_mg != null)
     if (aplicadas.length === 0) {
       alert('Nenhuma dose aplicada registrada ainda.')
       return
     }
-    if (!confirm(`Finalizar o protocolo de ${patient.nome} e enviar o relatório de doses aplicadas por WhatsApp?`)) return
+    const temReceita = doses.some(d => d.receita_url) || purchases.some(p => p.receita_url)
+    const avisoReceita = temReceita ? '' : '\n\n(Nenhuma receita anexada — pode finalizar mesmo assim, só um lembrete pra pedir depois.)'
+    if (!confirm(`Finalizar o protocolo de ${patient.nome} e enviar o relatório de doses aplicadas por WhatsApp?${avisoReceita}`)) return
     setFinalizando(true)
     const { error } = await supabase.functions.invoke('send-protocol-report', {
       body: {
@@ -530,7 +527,9 @@ export default function Paciente() {
                       </a>
                     )}
                   </div>
-                  <button onClick={() => deletePurchase(pur.id)} className="text-red-400 hover:text-red-600 text-xs flex-shrink-0">✕</button>
+                  {isAdmin && (
+                    <button onClick={() => deletePurchase(pur.id)} className="text-red-400 hover:text-red-600 text-xs flex-shrink-0">✕</button>
+                  )}
                 </div>
               ))}
             </div>
@@ -553,45 +552,47 @@ export default function Paciente() {
           </div>
         )}
 
-        <div className="border-t border-gray-100 pt-4">
-          <p className="text-xs font-medium text-gray-500 mb-3">REGISTRAR NOVA ENTRADA</p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Data da compra *</label>
-              <input type="date" value={purchaseForm.data_compra}
-                onChange={(e) => setPurchaseForm(f => ({ ...f, data_compra: e.target.value }))}
-                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+        {isAdmin && (
+          <div className="border-t border-gray-100 pt-4">
+            <p className="text-xs font-medium text-gray-500 mb-3">REGISTRAR NOVA ENTRADA</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Data da compra *</label>
+                <input type="date" value={purchaseForm.data_compra}
+                  onChange={(e) => setPurchaseForm(f => ({ ...f, data_compra: e.target.value }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Quantidade (mg) *</label>
+                <input type="number" step="0.5" placeholder="Ex: 10" value={purchaseForm.quantidade_mg}
+                  onChange={(e) => setPurchaseForm(f => ({ ...f, quantidade_mg: e.target.value }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Lote</label>
+                <input type="text" placeholder="AB1234" value={purchaseForm.lote}
+                  onChange={(e) => setPurchaseForm(f => ({ ...f, lote: e.target.value }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Obs</label>
+                <input type="text" placeholder="Farmácia, recompra..." value={purchaseForm.observacoes}
+                  onChange={(e) => setPurchaseForm(f => ({ ...f, observacoes: e.target.value }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Receita (PDF)</label>
+                <input type="file" accept="application/pdf"
+                  onChange={(e) => setPurchaseReceitaFile(e.target.files?.[0] ?? null)}
+                  className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-brand/10 file:text-brand" />
+              </div>
             </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Quantidade (mg) *</label>
-              <input type="number" step="0.5" placeholder="Ex: 10" value={purchaseForm.quantidade_mg}
-                onChange={(e) => setPurchaseForm(f => ({ ...f, quantidade_mg: e.target.value }))}
-                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Lote</label>
-              <input type="text" placeholder="AB1234" value={purchaseForm.lote}
-                onChange={(e) => setPurchaseForm(f => ({ ...f, lote: e.target.value }))}
-                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Obs</label>
-              <input type="text" placeholder="Farmácia, recompra..." value={purchaseForm.observacoes}
-                onChange={(e) => setPurchaseForm(f => ({ ...f, observacoes: e.target.value }))}
-                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Receita (PDF)</label>
-              <input type="file" accept="application/pdf"
-                onChange={(e) => setPurchaseReceitaFile(e.target.files?.[0] ?? null)}
-                className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-brand/10 file:text-brand" />
-            </div>
+            <button onClick={savePurchase} disabled={savingPurchase || !purchaseForm.quantidade_mg || !purchaseForm.data_compra}
+              className="mt-3 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50">
+              {savingPurchase ? 'Salvando...' : '+ Registrar Entrada'}
+            </button>
           </div>
-          <button onClick={savePurchase} disabled={savingPurchase || !purchaseForm.quantidade_mg || !purchaseForm.data_compra}
-            className="mt-3 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50">
-            {savingPurchase ? 'Salvando...' : '+ Registrar Entrada'}
-          </button>
-        </div>
+        )}
       </div>
 
       {/* Contrato */}
