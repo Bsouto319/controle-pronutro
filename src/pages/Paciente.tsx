@@ -28,11 +28,13 @@ export default function Paciente() {
   const [saving, setSaving] = useState<number | null>(null)
   const [savingPurchase, setSavingPurchase] = useState(false)
   const [togglingStatus, setTogglingStatus] = useState(false)
+  const [finalizando, setFinalizando] = useState(false)
   const [doseForm, setDoseForm] = useState<Record<number, Partial<DoseRecord>>>({})
   const [evolucao, setEvolucao] = useState<EvolucaoRecord[]>([])
   const [evolucaoForm, setEvolucaoForm] = useState<Record<number, { peso_kg: string; gordura_pct: string }>>({})
   const [activeSig, setActiveSig] = useState<number | null>(null)
   const [purchaseForm, setPurchaseForm] = useState({ data_compra: '', quantidade_mg: '', lote: '', observacoes: '' })
+  const [purchaseReceitaFile, setPurchaseReceitaFile] = useState<File | null>(null)
   const [numSemanas, setNumSemanas] = useState(8)
   const [uploadingPdf, setUploadingPdf] = useState<number | null>(null)
 
@@ -150,14 +152,30 @@ export default function Paciente() {
   async function savePurchase() {
     if (!purchaseForm.quantidade_mg || !purchaseForm.data_compra) return
     setSavingPurchase(true)
-    await supabase.from('pronutro_purchases').insert({
+    const { data: inserted, error } = await supabase.from('pronutro_purchases').insert({
       patient_id: id,
       data_compra: purchaseForm.data_compra,
       quantidade_mg: Number(purchaseForm.quantidade_mg),
       lote: purchaseForm.lote || null,
       observacoes: purchaseForm.observacoes || null,
-    })
+    }).select('*').single()
+
+    if (!error && inserted && purchaseReceitaFile) {
+      try {
+        const ext = purchaseReceitaFile.name.split('.').pop() ?? 'pdf'
+        const path = `${id}/entrada_${inserted.id}.${ext}`
+        const { error: upErr } = await supabase.storage.from('receitas').upload(path, purchaseReceitaFile, { upsert: true })
+        if (!upErr) {
+          const { data: urlData } = supabase.storage.from('receitas').getPublicUrl(path)
+          await supabase.from('pronutro_purchases').update({ receita_url: urlData.publicUrl }).eq('id', inserted.id)
+        }
+      } catch (err) {
+        console.error(err)
+      }
+    }
+
     setPurchaseForm({ data_compra: '', quantidade_mg: '', lote: '', observacoes: '' })
+    setPurchaseReceitaFile(null)
     const { data } = await supabase.from('pronutro_purchases').select('*').eq('patient_id', id).order('data_compra')
     setPurchases(data ?? [])
     setSavingPurchase(false)
@@ -236,6 +254,35 @@ export default function Paciente() {
     setPatient(p => p ? { ...p, ...editForm } : p)
     setEditingPatient(false)
     setSavingEdit(false)
+  }
+
+  async function finalizarProtocolo() {
+    if (!patient) return
+    const temReceita = doses.some(d => d.receita_url) || purchases.some(p => p.receita_url)
+    if (!temReceita) {
+      alert('Anexe a receita médica (na 1ª semana ou em algum registro de entrada) antes de finalizar o protocolo.')
+      return
+    }
+    const aplicadas = doses.filter(d => d.dose_mg != null)
+    if (aplicadas.length === 0) {
+      alert('Nenhuma dose aplicada registrada ainda.')
+      return
+    }
+    if (!confirm(`Finalizar o protocolo de ${patient.nome} e enviar o relatório de doses aplicadas por WhatsApp?`)) return
+    setFinalizando(true)
+    const { error } = await supabase.functions.invoke('send-protocol-report', {
+      body: {
+        patient_name: patient.nome,
+        patient_phone: patient.telefone,
+        doses: doses.map(d => ({ semana: d.semana, dose_mg: d.dose_mg, data_aplicacao: d.data_aplicacao })),
+      },
+    })
+    setFinalizando(false)
+    if (error) {
+      alert('Erro ao enviar o relatório. Tente novamente.')
+      return
+    }
+    alert('Relatório enviado! O paciente vai receber no WhatsApp.')
   }
 
   async function toggleAtivo() {
@@ -328,6 +375,13 @@ export default function Paciente() {
               }`}
             >
               {togglingStatus ? '...' : patient.ativo === false ? '✓ Reativar' : 'Inativar'}
+            </button>
+            <button
+              onClick={finalizarProtocolo}
+              disabled={finalizando}
+              className="text-xs px-3 py-1.5 rounded-lg border border-green-300 text-green-700 hover:bg-green-50 font-medium transition-colors disabled:opacity-50"
+            >
+              {finalizando ? 'Enviando...' : '✓ Finalizar Protocolo'}
             </button>
             <button
               onClick={deletarPaciente}
@@ -470,6 +524,11 @@ export default function Paciente() {
                     <span className="text-gray-600">{format(new Date(pur.data_compra + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}</span>
                     {pur.lote && <span className="text-gray-400 text-xs">Lote: {pur.lote}</span>}
                     {pur.observacoes && <span className="text-gray-400 text-xs truncate max-w-[120px]">{pur.observacoes}</span>}
+                    {pur.receita_url && (
+                      <a href={pur.receita_url} target="_blank" rel="noopener noreferrer" className="text-brand text-xs font-medium hover:underline">
+                        📄 Ver receita
+                      </a>
+                    )}
                   </div>
                   <button onClick={() => deletePurchase(pur.id)} className="text-red-400 hover:text-red-600 text-xs flex-shrink-0">✕</button>
                 </div>
@@ -520,6 +579,12 @@ export default function Paciente() {
               <input type="text" placeholder="Farmácia, recompra..." value={purchaseForm.observacoes}
                 onChange={(e) => setPurchaseForm(f => ({ ...f, observacoes: e.target.value }))}
                 className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Receita (PDF)</label>
+              <input type="file" accept="application/pdf"
+                onChange={(e) => setPurchaseReceitaFile(e.target.files?.[0] ?? null)}
+                className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-brand/10 file:text-brand" />
             </div>
           </div>
           <button onClick={savePurchase} disabled={savingPurchase || !purchaseForm.quantidade_mg || !purchaseForm.data_compra}

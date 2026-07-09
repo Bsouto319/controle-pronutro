@@ -30,6 +30,7 @@ export interface Purchase {
   quantidade_mg: number
   lote: string | null
   observacoes: string | null
+  receita_url: string | null
   created_at: string
 }
 
