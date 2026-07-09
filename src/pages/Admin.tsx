@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import type { Patient, Contract, DoseRecord } from '../types'
+import type { Patient, Contract, DoseRecord, Purchase } from '../types'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import ImportCSVModal from '../components/ImportCSVModal'
@@ -9,6 +9,13 @@ import ImportCSVModal from '../components/ImportCSVModal'
 interface PatientWithContract extends Patient {
   contract?: Contract
   doses: DoseRecord[]
+  saldo: number
+}
+
+function waLink(telefone: string) {
+  const digits = (telefone || '').replace(/\D/g, '')
+  const full = digits.length === 11 ? '55' + digits : digits
+  return `https://wa.me/${full}`
 }
 
 const statusBadge = (status?: string) => {
@@ -19,7 +26,7 @@ const statusBadge = (status?: string) => {
   return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-200">✕ Expirado</span>
 }
 
-type FilterTab = 'ativos' | 'inativos' | 'todos'
+type FilterTab = 'ativos' | 'inativos' | 'negativos' | 'todos'
 
 export default function Admin() {
   const [patients, setPatients] = useState<PatientWithContract[]>([])
@@ -46,11 +53,22 @@ export default function Admin() {
         .from('pronutro_dose_records')
         .select('*')
 
-      const merged = pts.map((p) => ({
-        ...p,
-        contract: contracts?.find((c) => c.patient_id === p.id),
-        doses: doses?.filter((d) => d.patient_id === p.id) ?? [],
-      }))
+      const { data: purchases } = await supabase
+        .from('pronutro_purchases')
+        .select('*')
+
+      const merged = pts.map((p) => {
+        const patientDoses = doses?.filter((d) => d.patient_id === p.id) ?? []
+        const patientPurchases = (purchases as Purchase[] | null)?.filter((pu) => pu.patient_id === p.id) ?? []
+        const comprado = patientPurchases.reduce((acc, pu) => acc + Number(pu.quantidade_mg), 0)
+        const aplicado = patientDoses.reduce((acc, d) => acc + Number(d.dose_mg ?? 0), 0)
+        return {
+          ...p,
+          contract: contracts?.find((c) => c.patient_id === p.id),
+          doses: patientDoses,
+          saldo: comprado - aplicado,
+        }
+      })
       setPatients(merged)
       setLoading(false)
     }
@@ -84,8 +102,9 @@ export default function Admin() {
 
   const ativos = patients.filter((p) => p.ativo !== false)
   const inativos = patients.filter((p) => p.ativo === false)
+  const negativos = ativos.filter((p) => p.saldo <= 0)
 
-  const byTab = tab === 'ativos' ? ativos : tab === 'inativos' ? inativos : patients
+  const byTab = tab === 'ativos' ? ativos : tab === 'inativos' ? inativos : tab === 'negativos' ? negativos : patients
 
   const filtered = byTab
     .filter(
@@ -104,11 +123,19 @@ export default function Admin() {
     if (!pts) return setLoading(false)
     const { data: contracts } = await supabase.from('pronutro_contracts').select('*')
     const { data: doses } = await supabase.from('pronutro_dose_records').select('*')
-    setPatients(pts.map((p) => ({
-      ...p,
-      contract: contracts?.find((c) => c.patient_id === p.id),
-      doses: doses?.filter((d) => d.patient_id === p.id) ?? [],
-    })))
+    const { data: purchases } = await supabase.from('pronutro_purchases').select('*')
+    setPatients(pts.map((p) => {
+      const patientDoses = doses?.filter((d) => d.patient_id === p.id) ?? []
+      const patientPurchases = (purchases as Purchase[] | null)?.filter((pu) => pu.patient_id === p.id) ?? []
+      const comprado = patientPurchases.reduce((acc, pu) => acc + Number(pu.quantidade_mg), 0)
+      const aplicado = patientDoses.reduce((acc, d) => acc + Number(d.dose_mg ?? 0), 0)
+      return {
+        ...p,
+        contract: contracts?.find((c) => c.patient_id === p.id),
+        doses: patientDoses,
+        saldo: comprado - aplicado,
+      }
+    }))
     setLoading(false)
   }
 
@@ -134,7 +161,7 @@ export default function Admin() {
 
       {/* Abas */}
       <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-xl w-fit">
-        {([['ativos', `Ativos (${ativos.length})`, 'text-green-700'], ['inativos', `Inativos (${inativos.length})`, 'text-gray-500'], ['todos', 'Todos', 'text-gray-600']] as const).map(([key, label, _]) => (
+        {([['ativos', `Ativos (${ativos.length})`, 'text-green-700'], ['inativos', `Inativos (${inativos.length})`, 'text-gray-500'], ['negativos', `⚠ Saldo negativo (${negativos.length})`, 'text-red-600'], ['todos', 'Todos', 'text-gray-600']] as const).map(([key, label, _]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
@@ -241,6 +268,11 @@ export default function Admin() {
                 <div className="flex flex-wrap items-center gap-2 mt-3">
                   {statusBadge(p.contract?.status)}
                   <span className="text-xs text-gray-400">{p.medico_prescritor}</span>
+                  {p.saldo <= 0 && (
+                    <span className="text-xs bg-red-50 text-red-600 border border-red-200 px-1.5 py-0.5 rounded-full font-medium">
+                      ⚠ Saldo {p.saldo} mg
+                    </span>
+                  )}
                   <span className="text-xs text-gray-300 ml-auto">
                     {format(new Date(p.created_at), 'dd/MM/yy', { locale: ptBR })}
                   </span>
@@ -257,6 +289,7 @@ export default function Admin() {
                   <th className="text-left px-5 py-3 font-semibold text-sm">Paciente</th>
                   <th className="text-left px-5 py-3 font-semibold text-sm">Médico</th>
                   <th className="text-left px-5 py-3 font-semibold text-sm">Contrato</th>
+                  <th className="text-left px-5 py-3 font-semibold text-sm">Saldo</th>
                   <th className="text-left px-5 py-3 font-semibold text-sm">Cadastro</th>
                   <th className="px-5 py-3"/>
                 </tr>
@@ -275,6 +308,23 @@ export default function Admin() {
                     </td>
                     <td className="px-5 py-3.5 text-gray-600">{p.medico_prescritor}</td>
                     <td className="px-5 py-3.5">{statusBadge(p.contract?.status)}</td>
+                    <td className="px-5 py-3.5">
+                      <span className={`font-semibold text-sm ${p.saldo <= 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                        {p.saldo} mg
+                      </span>
+                      {p.saldo <= 0 && p.telefone && (
+                        <a
+                          href={waLink(p.telefone)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          title="Chamar no WhatsApp"
+                          className="ml-2 text-xs text-green-600 hover:underline"
+                        >
+                          💬
+                        </a>
+                      )}
+                    </td>
                     <td className="px-5 py-3.5 text-gray-400 text-xs">
                       {format(new Date(p.created_at), 'dd/MM/yyyy', { locale: ptBR })}
                     </td>
