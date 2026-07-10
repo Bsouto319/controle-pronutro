@@ -50,6 +50,8 @@ export default function Paciente() {
   const [savingEdit, setSavingEdit] = useState(false)
 
   const sigRefs = useRef<Record<number, SignaturePadHandle | null>>({})
+  const purchaseReceitaInputRef = useRef<HTMLInputElement>(null)
+  const bioFileInputRef = useRef<HTMLInputElement>(null)
 
   async function loadData() {
     const [{ data: p }, { data: c }, { data: d }, { data: pur }, { data: ev }, { data: bio }] = await Promise.all([
@@ -198,6 +200,7 @@ export default function Paciente() {
 
     setPurchaseForm({ data_compra: '', quantidade_mg: '', lote: '', observacoes: '' })
     setPurchaseReceitaFile(null)
+    if (purchaseReceitaInputRef.current) purchaseReceitaInputRef.current.value = ''
     const { data } = await supabase.from('pronutro_purchases').select('*').eq('patient_id', id).order('data_compra')
     setPurchases(data ?? [])
     setSavingPurchase(false)
@@ -226,6 +229,7 @@ export default function Paciente() {
       if (error) throw error
       setBioForm({ data_exame: '', observacoes: '' })
       setBioFile(null)
+      if (bioFileInputRef.current) bioFileInputRef.current.value = ''
       const { data } = await supabase.from('pronutro_bioimpedancia').select('*').eq('patient_id', id).order('data_exame', { ascending: false })
       setBioimpedancias(data ?? [])
     } catch (err) {
@@ -647,9 +651,15 @@ export default function Paciente() {
               </div>
               <div>
                 <label className="text-xs text-gray-500 block mb-1">Receita (PDF)</label>
-                <input type="file" accept="application/pdf"
-                  onChange={(e) => setPurchaseReceitaFile(e.target.files?.[0] ?? null)}
-                  className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-brand/10 file:text-brand" />
+                <div className="flex items-center gap-2">
+                  <input ref={purchaseReceitaInputRef} type="file" accept="application/pdf"
+                    onChange={(e) => setPurchaseReceitaFile(e.target.files?.[0] ?? null)}
+                    className="flex-1 min-w-0 text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-brand/10 file:text-brand" />
+                  {purchaseReceitaFile && (
+                    <button type="button" onClick={() => { setPurchaseReceitaFile(null); if (purchaseReceitaInputRef.current) purchaseReceitaInputRef.current.value = '' }}
+                      title="Remover arquivo selecionado" className="text-red-500 hover:text-red-700 text-sm font-bold flex-shrink-0">✕</button>
+                  )}
+                </div>
               </div>
             </div>
             <button onClick={savePurchase} disabled={savingPurchase || !purchaseForm.quantidade_mg || !purchaseForm.data_compra}
@@ -701,9 +711,15 @@ export default function Paciente() {
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">Relatório (PDF ou foto) *</label>
-              <input type="file" accept="application/pdf,image/*"
-                onChange={(e) => setBioFile(e.target.files?.[0] ?? null)}
-                className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-brand/10 file:text-brand" />
+              <div className="flex items-center gap-2">
+                <input ref={bioFileInputRef} type="file" accept="application/pdf,image/*"
+                  onChange={(e) => setBioFile(e.target.files?.[0] ?? null)}
+                  className="flex-1 min-w-0 text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-brand/10 file:text-brand" />
+                {bioFile && (
+                  <button type="button" onClick={() => { setBioFile(null); if (bioFileInputRef.current) bioFileInputRef.current.value = '' }}
+                    title="Remover arquivo selecionado" className="text-red-500 hover:text-red-700 text-sm font-bold flex-shrink-0">✕</button>
+                )}
+              </div>
             </div>
           </div>
           <button onClick={saveBioimpedancia} disabled={savingBio || !bioForm.data_exame || !bioFile}
