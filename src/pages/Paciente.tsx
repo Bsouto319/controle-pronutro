@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import SignaturePad, { type SignaturePadHandle } from '../components/SignaturePad'
 import EvolucaoChart from '../components/EvolucaoChart'
 import { useIsAdmin } from '../hooks/useIsAdmin'
-import type { Patient, Contract, DoseRecord, Purchase, EvolucaoRecord } from '../types'
+import type { Patient, Contract, DoseRecord, Purchase, EvolucaoRecord, Bioimpedancia } from '../types'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
@@ -37,6 +37,10 @@ export default function Paciente() {
   const [purchaseReceitaFile, setPurchaseReceitaFile] = useState<File | null>(null)
   const [numSemanas, setNumSemanas] = useState(8)
   const [uploadingPdf, setUploadingPdf] = useState<number | null>(null)
+  const [bioimpedancias, setBioimpedancias] = useState<Bioimpedancia[]>([])
+  const [bioForm, setBioForm] = useState({ data_exame: '', observacoes: '' })
+  const [bioFile, setBioFile] = useState<File | null>(null)
+  const [savingBio, setSavingBio] = useState(false)
 
   // Edição de dados do paciente
   const [editingPatient, setEditingPatient] = useState(false)
@@ -46,18 +50,20 @@ export default function Paciente() {
   const sigRefs = useRef<Record<number, SignaturePadHandle | null>>({})
 
   async function loadData() {
-    const [{ data: p }, { data: c }, { data: d }, { data: pur }, { data: ev }] = await Promise.all([
+    const [{ data: p }, { data: c }, { data: d }, { data: pur }, { data: ev }, { data: bio }] = await Promise.all([
       supabase.from('pronutro_patients').select('*').eq('id', id).single(),
       supabase.from('pronutro_contracts').select('*').eq('patient_id', id).single(),
       supabase.from('pronutro_dose_records').select('*').eq('patient_id', id).order('semana'),
       supabase.from('pronutro_purchases').select('*').eq('patient_id', id).order('data_compra'),
       supabase.from('pronutro_evolucao').select('*').eq('patient_id', id).order('semana'),
+      supabase.from('pronutro_bioimpedancia').select('*').eq('patient_id', id).order('data_exame', { ascending: false }),
     ])
     setPatient(p)
     setContract(c)
     setDoses(d ?? [])
     setPurchases(pur ?? [])
     setEvolucao(ev ?? [])
+    setBioimpedancias(bio ?? [])
 
     // Número de semanas dinâmico: max entre 8 e maior semana existente + 1
     const maxExisting = d && d.length > 0 ? Math.max(...(d as DoseRecord[]).map(r => r.semana)) : 0
@@ -198,6 +204,40 @@ export default function Paciente() {
   async function deletePurchase(purchaseId: string) {
     await supabase.from('pronutro_purchases').delete().eq('id', purchaseId)
     setPurchases((prev) => prev.filter((p) => p.id !== purchaseId))
+  }
+
+  async function saveBioimpedancia() {
+    if (!bioForm.data_exame || !bioFile) return
+    setSavingBio(true)
+    try {
+      const ext = bioFile.name.split('.').pop() ?? 'pdf'
+      const path = `${id}/${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('bioimpedancia').upload(path, bioFile, { upsert: true })
+      if (upErr) throw upErr
+      const { data: urlData } = supabase.storage.from('bioimpedancia').getPublicUrl(path)
+      const { error } = await supabase.from('pronutro_bioimpedancia').insert({
+        patient_id: id,
+        data_exame: bioForm.data_exame,
+        arquivo_url: urlData.publicUrl,
+        observacoes: bioForm.observacoes || null,
+      })
+      if (error) throw error
+      setBioForm({ data_exame: '', observacoes: '' })
+      setBioFile(null)
+      const { data } = await supabase.from('pronutro_bioimpedancia').select('*').eq('patient_id', id).order('data_exame', { ascending: false })
+      setBioimpedancias(data ?? [])
+    } catch (err) {
+      alert('Erro ao anexar o exame de bioimpedância.')
+      console.error(err)
+    } finally {
+      setSavingBio(false)
+    }
+  }
+
+  async function deleteBioimpedancia(bioId: string) {
+    if (!confirm('Remover este exame de bioimpedância?')) return
+    await supabase.from('pronutro_bioimpedancia').delete().eq('id', bioId)
+    setBioimpedancias((prev) => prev.filter((b) => b.id !== bioId))
   }
 
   async function saveDose(semana: number) {
@@ -607,6 +647,59 @@ export default function Paciente() {
             </button>
           </div>
         )}
+      </div>
+
+      {/* Bioimpedância (InBody) */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <h2 className="font-bold text-gray-800 mb-1">Bioimpedância (InBody)</h2>
+        <p className="text-xs text-gray-400 mb-4">Anexe o relatório entregue pela equipe InBody a cada exame.</p>
+
+        {bioimpedancias.length > 0 && (
+          <div className="space-y-1.5 mb-4">
+            {bioimpedancias.map((b) => (
+              <div key={b.id} className="flex items-start justify-between gap-2 bg-purple-50/50 border border-purple-100 rounded-lg px-3 py-2 text-sm">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 min-w-0">
+                  <span className="text-purple-700 font-semibold">
+                    {format(new Date(b.data_exame + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}
+                  </span>
+                  {b.observacoes && <span className="text-gray-400 text-xs truncate max-w-[200px]">{b.observacoes}</span>}
+                  <a href={b.arquivo_url} target="_blank" rel="noopener noreferrer" className="text-brand text-xs font-medium hover:underline">
+                    📄 Ver relatório
+                  </a>
+                </div>
+                <button onClick={() => deleteBioimpedancia(b.id)} className="text-red-400 hover:text-red-600 text-xs flex-shrink-0">✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="border-t border-gray-100 pt-4">
+          <p className="text-xs font-medium text-gray-500 mb-3">ANEXAR NOVO EXAME</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Data do exame *</label>
+              <input type="date" value={bioForm.data_exame}
+                onChange={(e) => setBioForm(f => ({ ...f, data_exame: e.target.value }))}
+                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Obs</label>
+              <input type="text" placeholder="Opcional" value={bioForm.observacoes}
+                onChange={(e) => setBioForm(f => ({ ...f, observacoes: e.target.value }))}
+                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Relatório (PDF ou foto) *</label>
+              <input type="file" accept="application/pdf,image/*"
+                onChange={(e) => setBioFile(e.target.files?.[0] ?? null)}
+                className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-brand/10 file:text-brand" />
+            </div>
+          </div>
+          <button onClick={saveBioimpedancia} disabled={savingBio || !bioForm.data_exame || !bioFile}
+            className="mt-3 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors disabled:opacity-50">
+            {savingBio ? 'Salvando...' : '+ Anexar Exame'}
+          </button>
+        </div>
       </div>
 
       {/* Contrato */}

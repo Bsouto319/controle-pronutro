@@ -34,6 +34,15 @@ export interface Purchase {
   created_at: string
 }
 
+export interface Bioimpedancia {
+  id: string
+  patient_id: string
+  data_exame: string
+  arquivo_url: string
+  observacoes: string | null
+  created_at: string
+}
+
 export interface EstoqueConfig {
   id: number
   estoque_alerta_mg: number
