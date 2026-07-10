@@ -38,6 +38,7 @@ export default function Paciente() {
   const [numSemanas, setNumSemanas] = useState(8)
   const [uploadingPdf, setUploadingPdf] = useState<number | null>(null)
   const [expandedWeeks, setExpandedWeeks] = useState<Record<number, boolean>>({})
+  const [showPatientInfo, setShowPatientInfo] = useState(false)
   const [bioimpedancias, setBioimpedancias] = useState<Bioimpedancia[]>([])
   const [bioForm, setBioForm] = useState({ data_exame: '', observacoes: '' })
   const [bioFile, setBioFile] = useState<File | null>(null)
@@ -395,10 +396,18 @@ export default function Paciente() {
       {/* Dados do paciente */}
       <div className={`bg-white rounded-xl border p-6 ${patient.ativo === false ? 'border-gray-300 bg-gray-50' : 'border-gray-200'}`}>
         <div className="flex items-start justify-between gap-3 mb-4">
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-gray-800">{patient.nome}</h1>
+          <div
+            className="flex items-center gap-2 cursor-pointer select-none min-w-0"
+            onClick={() => setShowPatientInfo(v => !v)}
+            title={showPatientInfo ? 'Recolher dados do paciente' : 'Expandir dados do paciente'}
+          >
+            <span className="text-gray-400 text-sm shrink-0">{showPatientInfo ? '▾' : '▸'}</span>
+            <h1 className="text-xl font-bold text-gray-800 truncate">{patient.nome}</h1>
             {patient.ativo === false && (
-              <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full font-medium">Inativo</span>
+              <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full font-medium shrink-0">Inativo</span>
+            )}
+            {!showPatientInfo && (
+              <span className="text-xs text-gray-400 font-normal shrink-0 hidden sm:inline">— {patient.medico_prescritor || 'sem médico'}</span>
             )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -411,6 +420,7 @@ export default function Paciente() {
                     dosagem_inicial_mg: patient.dosagem_inicial_mg, observacoes: patient.observacoes,
                   })
                   setEditingPatient(true)
+                  setShowPatientInfo(true)
                 }}
                 className="text-xs px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 font-medium transition-colors"
               >
@@ -444,7 +454,7 @@ export default function Paciente() {
           </div>
         </div>
 
-        {editingPatient ? (
+        {showPatientInfo && (editingPatient ? (
           <div className="space-y-3">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <div>
@@ -540,7 +550,7 @@ export default function Paciente() {
               </div>
             )}
           </>
-        )}
+        ))}
       </div>
 
       {/* Estoque de Medicamento */}
