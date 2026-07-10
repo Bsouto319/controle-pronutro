@@ -8,6 +8,7 @@ import Contrato from './pages/Contrato'
 import Paciente from './pages/Paciente'
 import Usuarios from './pages/Usuarios'
 import Estoque from './pages/Estoque'
+import Financeiro from './pages/Financeiro'
 import LoginPage from './pages/LoginPage'
 import ResetSenha from './pages/ResetSenha'
 
@@ -60,6 +61,11 @@ export default function App() {
         <Route path="/estoque" element={
           <ProtectedRoute>
             <Layout><Estoque /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/financeiro" element={
+          <ProtectedRoute>
+            <Layout><Financeiro /></Layout>
           </ProtectedRoute>
         } />
       </Routes>

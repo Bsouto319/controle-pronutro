@@ -34,6 +34,19 @@ export interface Purchase {
   created_at: string
 }
 
+export interface Pagamento {
+  id: string
+  patient_id: string
+  valor: number
+  data_pagamento: string
+  forma_pagamento: string
+  referente_a: string
+  status: 'pago' | 'pendente' | 'cancelado'
+  observacoes: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface Bioimpedancia {
   id: string
   patient_id: string

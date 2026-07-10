@@ -37,6 +37,7 @@ export default function Paciente() {
   const [purchaseReceitaFile, setPurchaseReceitaFile] = useState<File | null>(null)
   const [numSemanas, setNumSemanas] = useState(8)
   const [uploadingPdf, setUploadingPdf] = useState<number | null>(null)
+  const [expandedWeeks, setExpandedWeeks] = useState<Record<number, boolean>>({})
   const [bioimpedancias, setBioimpedancias] = useState<Bioimpedancia[]>([])
   const [bioForm, setBioForm] = useState({ data_exame: '', observacoes: '' })
   const [bioFile, setBioFile] = useState<File | null>(null)
@@ -776,6 +777,8 @@ export default function Paciente() {
             // Depois de preenchida, só admin pode editar — evita troca acidental de semana pela equipe
             const canEdit = !isSaved || isAdmin
             const inputCls = `w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand ${!canEdit ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`
+            // Semana já preenchida vem colapsada por padrão (economiza espaço, deixa a pendente mais visível) — pendente sempre aberta
+            const isExpanded = !isSaved || expandedWeeks[semana] === true
 
             return (
               <div
@@ -788,8 +791,14 @@ export default function Paciente() {
                     : isProxima ? 'border-amber-400 bg-amber-50/60 ring-2 ring-amber-400 shadow-md' : 'border-amber-200 bg-amber-50/40'
                 }`}
               >
-                <div className="flex items-center justify-between mb-3">
+                <div
+                  className={`flex items-center justify-between mb-3 ${isSaved ? 'cursor-pointer select-none' : ''}`}
+                  onClick={isSaved ? () => setExpandedWeeks(w => ({ ...w, [semana]: !isExpanded })) : undefined}
+                >
                   <h3 className="font-semibold text-gray-700 flex items-center gap-2">
+                    {isSaved && (
+                      <span className="text-gray-400 text-xs">{isExpanded ? '▾' : '▸'}</span>
+                    )}
                     {isPrimeira ? (
                       <span className="inline-flex items-center gap-1 bg-blue-600 text-white text-xs font-bold px-2.5 py-1 rounded-full">
                         🔑 1ª DOSE — INICIAL
@@ -821,6 +830,8 @@ export default function Paciente() {
                   )}
                 </div>
 
+                {isExpanded && (
+                <>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mb-2">
                   <div>
                     <label className="text-xs text-gray-500 block mb-1">Dose aplicada (mg)</label>
@@ -979,6 +990,8 @@ export default function Paciente() {
                 >
                   {!canEdit ? '🔒 Bloqueado (somente admin)' : saving === semana ? 'Salvando...' : isSaved ? 'Atualizar' : 'Salvar Dose'}
                 </button>
+                </>
+                )}
               </div>
             )
           })
