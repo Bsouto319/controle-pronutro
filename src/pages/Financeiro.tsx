@@ -46,6 +46,7 @@ export default function Financeiro() {
   const [showImport, setShowImport] = useState(false)
   const [patientSearch, setPatientSearch] = useState('')
   const [showPatientDropdown, setShowPatientDropdown] = useState(false)
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false)
 
   const [form, setForm] = useState({
     patient_id: '',
@@ -284,8 +285,47 @@ export default function Financeiro() {
 
       {/* Filtros */}
       <div className="flex flex-col sm:flex-row gap-3">
-        <input type="text" placeholder="Buscar por paciente..." value={search} onChange={(e) => setSearch(e.target.value)}
-          className="flex-1 px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/40 bg-white" />
+        <div className="flex-1 relative">
+          <input
+            type="text"
+            placeholder="Buscar paciente pra lançar pagamento ou filtrar histórico..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onFocus={() => setShowSearchDropdown(true)}
+            onBlur={() => setTimeout(() => setShowSearchDropdown(false), 150)}
+            className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/40 bg-white"
+          />
+          {showSearchDropdown && search && (
+            <div className="absolute z-20 mt-1 w-full max-h-64 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-lg">
+              {patients.filter((p) => p.nome.toLowerCase().includes(search.toLowerCase())).length > 0 && (
+                <p className="text-xs text-gray-400 px-3 pt-2 pb-1">Pacientes cadastrados:</p>
+              )}
+              {patients
+                .filter((p) => p.nome.toLowerCase().includes(search.toLowerCase()))
+                .slice(0, 8)
+                .map((p) => (
+                  <div key={p.id} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-brand/5">
+                    <span className="text-sm text-gray-700 truncate">{p.nome}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForm((f) => ({ ...f, patient_id: p.id }))
+                        setPatientSearch(p.nome)
+                        setShowForm(true)
+                        setShowSearchDropdown(false)
+                      }}
+                      className="flex-shrink-0 text-xs font-semibold text-white bg-brand px-2.5 py-1 rounded-lg hover:bg-brand-dark transition-colors"
+                    >
+                      + Lançar pagamento
+                    </button>
+                  </div>
+                ))}
+              {patients.filter((p) => p.nome.toLowerCase().includes(search.toLowerCase())).length === 0 && (
+                <p className="px-3 py-2 text-xs text-gray-400">Nenhum paciente cadastrado com esse nome.</p>
+              )}
+            </div>
+          )}
+        </div>
         <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)}
           title="De" className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white" />
         <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)}
