@@ -730,12 +730,14 @@ export default function Paciente() {
                 <button onClick={reenviarContrato} className="text-sm text-brand hover:underline">Reenviar por email →</button>
               </div>
             )}
-            {contract.signature_data && (
+            {contract.signature_data && contract.signature_data.startsWith('data:image') ? (
               <div className="mt-2">
                 <p className="text-xs text-gray-400 mb-1">Assinatura registrada:</p>
                 <img src={contract.signature_data} alt="Assinatura" className="border border-gray-200 rounded max-h-20" />
               </div>
-            )}
+            ) : contract.signature_data ? (
+              <p className="text-xs text-green-600 mt-2">✓ Aceito via botão de concordância (sem assinatura desenhada)</p>
+            ) : null}
           </div>
         ) : (
           <p className="text-sm text-gray-400">Contrato não gerado.</p>

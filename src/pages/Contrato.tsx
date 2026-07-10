@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import SignaturePad, { type SignaturePadHandle } from '../components/SignaturePad'
 import ProNutroLogo from '../components/ProNutroLogo'
 import type { Patient, Contract } from '../types'
 import { format } from 'date-fns'
@@ -9,7 +8,6 @@ import { ptBR } from 'date-fns/locale'
 
 export default function Contrato() {
   const { token } = useParams<{ token: string }>()
-  const sigRef = useRef<SignaturePadHandle>(null)
   const [patient, setPatient] = useState<Patient | null>(null)
   const [contract, setContract] = useState<Contract | null>(null)
   const [loading, setLoading] = useState(true)
@@ -17,6 +15,7 @@ export default function Contrato() {
   const [done, setDone] = useState(false)
   const [error, setError] = useState('')
   const [lgpdConsent, setLgpdConsent] = useState(false)
+  const [termsConsent, setTermsConsent] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -44,18 +43,17 @@ export default function Contrato() {
   }, [token])
 
   async function sign() {
-    if (!sigRef.current || sigRef.current.isEmpty()) {
-      setError('Por favor, assine no campo acima antes de confirmar.')
+    if (!lgpdConsent || !termsConsent) {
+      setError('Marque os dois consentimentos acima antes de confirmar.')
       return
     }
     setSigning(true)
-    const sig = sigRef.current.toDataURL()
 
     const { error: e } = await supabase
       .from('pronutro_contracts')
       .update({
         status: 'signed',
-        signature_data: sig,
+        signature_data: 'CONCORDANCIA_VIA_BOTAO',
         signed_at: new Date().toISOString(),
       })
       .eq('token', token)
@@ -175,32 +173,35 @@ export default function Contrato() {
                 </label>
               </div>
 
-              {!lgpdConsent && (
+              {/* Concordância com os termos do contrato — sem precisar desenhar assinatura */}
+              <div className={`rounded-xl border p-4 mb-4 transition-colors ${termsConsent ? 'bg-green-50 border-green-300' : 'bg-gray-50 border-gray-200'}`}>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={termsConsent}
+                    onChange={(e) => setTermsConsent(e.target.checked)}
+                    className="mt-0.5 w-5 h-5 accent-green-600 flex-shrink-0"
+                  />
+                  <span className="text-gray-700 text-sm font-medium leading-relaxed">
+                    Declaro que li, compreendi e concordo com todas as cláusulas deste contrato, em nome de {patient?.nome}.
+                  </span>
+                </label>
+              </div>
+
+              {(!lgpdConsent || !termsConsent) && (
                 <p className="text-xs text-blue-600 text-center mb-4">
-                  Marque o consentimento LGPD acima para liberar a assinatura.
+                  Marque os dois consentimentos acima para liberar a confirmação.
                 </p>
               )}
-
-              <div className={`mb-4 transition-opacity ${lgpdConsent ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
-                <label className="text-xs text-gray-500 block mb-1">Assinatura do Paciente — {patient?.nome}</label>
-                <SignaturePad ref={sigRef} />
-                <button
-                  type="button"
-                  onClick={() => sigRef.current?.clear()}
-                  className="text-xs text-gray-400 hover:text-gray-600 mt-1"
-                >
-                  Limpar assinatura
-                </button>
-              </div>
 
               {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg mb-3">{error}</p>}
 
               <button
                 onClick={sign}
-                disabled={signing || !lgpdConsent}
+                disabled={signing || !lgpdConsent || !termsConsent}
                 className="w-full bg-brand text-white py-3 rounded-xl font-semibold text-base hover:bg-brand-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {signing ? 'Registrando assinatura...' : 'Confirmar Assinatura e Aceitar Contrato'}
+                {signing ? 'Registrando...' : '✓ Concordo com os Termos e Aceito o Contrato'}
               </button>
 
               <p className="text-xs text-gray-400 text-center mt-2">

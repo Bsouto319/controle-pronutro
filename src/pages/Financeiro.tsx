@@ -5,6 +5,7 @@ import { useIsAdmin } from '../hooks/useIsAdmin'
 import type { Pagamento, Patient } from '../types'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import ImportPagamentosCSVModal from '../components/ImportPagamentosCSVModal'
 
 interface PagamentoComPaciente extends Pagamento {
   paciente_nome?: string
@@ -42,6 +43,9 @@ export default function Financeiro() {
   const [dataInicio, setDataInicio] = useState('')
   const [dataFim, setDataFim] = useState('')
   const [showForm, setShowForm] = useState(false)
+  const [showImport, setShowImport] = useState(false)
+  const [patientSearch, setPatientSearch] = useState('')
+  const [showPatientDropdown, setShowPatientDropdown] = useState(false)
 
   const [form, setForm] = useState({
     patient_id: '',
@@ -88,6 +92,7 @@ export default function Financeiro() {
       patient_id: '', valor: '', data_pagamento: format(new Date(), 'yyyy-MM-dd'),
       forma_pagamento: 'pix', referente_a: 'consulta', status: 'pago', observacoes: '',
     })
+    setPatientSearch('')
     setShowForm(false)
     setSaving(false)
     load()
@@ -150,6 +155,9 @@ export default function Financeiro() {
           <p className="text-sm text-gray-400 mt-0.5">Controle de pagamentos — quem pagou, quando e quanto.</p>
         </div>
         <div className="flex gap-2">
+          <button onClick={() => setShowImport(true)} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors font-medium bg-white">
+            ↑ <span className="hidden sm:inline">Importar</span> Planilha
+          </button>
           <button onClick={exportCSV} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors font-medium bg-white">
             ↓ <span className="hidden sm:inline">Exportar</span> CSV
           </button>
@@ -161,6 +169,14 @@ export default function Financeiro() {
           </button>
         </div>
       </div>
+
+      {showImport && (
+        <ImportPagamentosCSVModal
+          patients={patients}
+          onClose={() => setShowImport(false)}
+          onSuccess={() => { setShowImport(false); load() }}
+        />
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3">
@@ -179,13 +195,38 @@ export default function Financeiro() {
         <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm space-y-4">
           <h2 className="text-sm font-bold text-gray-700">+ Novo pagamento</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <div className="col-span-2 sm:col-span-1">
+            <div className="col-span-2 sm:col-span-1 relative">
               <label className="text-xs text-gray-500 block mb-1">Paciente *</label>
-              <select value={form.patient_id} onChange={(e) => setForm((f) => ({ ...f, patient_id: e.target.value }))}
-                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand">
-                <option value="">Selecione...</option>
-                {patients.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
-              </select>
+              <input
+                type="text"
+                placeholder="Digite pra buscar..."
+                value={patientSearch}
+                onChange={(e) => { setPatientSearch(e.target.value); setForm((f) => ({ ...f, patient_id: '' })); setShowPatientDropdown(true) }}
+                onFocus={() => setShowPatientDropdown(true)}
+                onBlur={() => setTimeout(() => setShowPatientDropdown(false), 150)}
+                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+              />
+              {showPatientDropdown && patientSearch && (
+                <div className="absolute z-10 mt-1 w-full max-h-48 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg">
+                  {patients
+                    .filter((p) => p.nome.toLowerCase().includes(patientSearch.toLowerCase()))
+                    .slice(0, 20)
+                    .map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => { setForm((f) => ({ ...f, patient_id: p.id })); setPatientSearch(p.nome); setShowPatientDropdown(false) }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-brand/10 transition-colors"
+                      >
+                        {p.nome}
+                      </button>
+                    ))}
+                  {patients.filter((p) => p.nome.toLowerCase().includes(patientSearch.toLowerCase())).length === 0 && (
+                    <p className="px-3 py-2 text-xs text-gray-400">Nenhum paciente encontrado.</p>
+                  )}
+                </div>
+              )}
+              {form.patient_id && <p className="text-xs text-green-600 mt-1">✓ Selecionado</p>}
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">Valor (R$) *</label>
