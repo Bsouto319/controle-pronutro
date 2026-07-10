@@ -88,6 +88,8 @@ function normalizeForma(raw: string): string {
   if (l.includes('debito') || l.includes('débito')) return 'cartao_debito'
   if (l.includes('boleto')) return 'boleto'
   if (l.includes('transfer')) return 'transferencia'
+  if (l.includes('b16')) return 'b16'
+  if (l.includes('pronutro')) return 'pronutro'
   return 'pix'
 }
 

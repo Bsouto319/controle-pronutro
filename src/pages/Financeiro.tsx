@@ -18,6 +18,8 @@ const FORMAS = [
   { value: 'cartao_debito', label: 'Cartão débito' },
   { value: 'boleto', label: 'Boleto' },
   { value: 'transferencia', label: 'Transferência' },
+  { value: 'b16', label: 'B16' },
+  { value: 'pronutro', label: 'ProNutro' },
 ]
 
 const REFERENTES = [
