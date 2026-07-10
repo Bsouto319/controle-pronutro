@@ -193,7 +193,7 @@ export default function Financeiro() {
 
       {/* Form novo pagamento */}
       {showForm && (
-        <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm space-y-4">
+        <div id="form-novo-pagamento" className="bg-white rounded-2xl border-2 border-brand p-5 shadow-md space-y-4 scroll-mt-24">
           <h2 className="text-sm font-bold text-gray-700">+ Novo pagamento</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <div className="col-span-2 sm:col-span-1 relative">
@@ -308,11 +308,13 @@ export default function Financeiro() {
                     <span className="text-sm text-gray-700 truncate">{p.nome}</span>
                     <button
                       type="button"
-                      onClick={() => {
+                      onMouseDown={(e) => {
+                        e.preventDefault()
                         setForm((f) => ({ ...f, patient_id: p.id }))
                         setPatientSearch(p.nome)
                         setShowForm(true)
                         setShowSearchDropdown(false)
+                        setTimeout(() => document.getElementById('form-novo-pagamento')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
                       }}
                       className="flex-shrink-0 text-xs font-semibold text-white bg-brand px-2.5 py-1 rounded-lg hover:bg-brand-dark transition-colors"
                     >
