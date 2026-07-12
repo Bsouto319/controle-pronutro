@@ -287,7 +287,7 @@ export default function Paciente() {
       setEvolucao(evUp ?? [])
     }
 
-    if (sig && !sig.isEmpty() && patient?.email) {
+    if (sig && !sig.isEmpty() && (patient?.email || patient?.telefone)) {
       supabase.functions.invoke('send-dose-email', {
         body: {
           patient_name: patient.nome,

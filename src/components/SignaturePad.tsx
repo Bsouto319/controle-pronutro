@@ -41,13 +41,33 @@ const SignaturePad = forwardRef<SignaturePadHandle>((_, ref) => {
     function resize() {
       const rect = canvas!.getBoundingClientRect()
       if (rect.width === 0 || rect.height === 0) return
+
+      // Girar o tablet dispara resize/orientationchange NO MEIO da assinatura.
+      // Alterar canvas.width/height apaga o buffer (comportamento padrão de <canvas>) --
+      // por isso salvamos o desenho atual antes e redesenhamos depois, em vez de só limpar.
+      const wasEmpty = empty.current
+      const snapshot = !wasEmpty ? canvas!.toDataURL('image/png') : null
+
       const ratio = window.devicePixelRatio || 1
       canvas!.width = rect.width * ratio
       canvas!.height = rect.height * ratio
       const ctx = canvas!.getContext('2d')
       ctx?.scale(ratio, ratio)
       applyContextDefaults()
-      empty.current = true
+
+      if (snapshot) {
+        const img = new Image()
+        img.onload = () => {
+          const c2 = canvasRef.current
+          const ctx2 = c2?.getContext('2d')
+          if (!c2 || !ctx2) return
+          ctx2.drawImage(img, 0, 0, rect.width, rect.height)
+        }
+        img.src = snapshot
+        empty.current = false
+      } else {
+        empty.current = true
+      }
     }
 
     resize()
