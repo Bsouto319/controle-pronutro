@@ -9,6 +9,10 @@ export interface Patient {
   observacoes: string | null
   ativo: boolean
   created_at: string
+  protocolo_confirmacao_status: 'aguardando' | 'confirmado' | 'recusado' | null
+  protocolo_confirmacao_tipo: 'termino' | 'novo' | null
+  protocolo_confirmacao_enviado_em: string | null
+  protocolo_confirmacao_respondido_em: string | null
 }
 
 export interface Contract {

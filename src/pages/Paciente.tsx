@@ -316,6 +316,24 @@ export default function Paciente() {
     setSavingEdit(false)
   }
 
+  async function enviarConfirmacaoProtocolo(tipo: 'termino' | 'novo') {
+    if (!patient) return
+    const { error } = await supabase.functions.invoke('send-protocol-confirmation', {
+      body: { patient_id: patient.id, patient_name: patient.nome, patient_phone: patient.telefone, tipo },
+    })
+    if (error) {
+      alert('Relatório enviado, mas houve erro ao mandar o botão de confirmação. Tente de novo pela ficha.')
+      return
+    }
+    setPatient(p => p ? {
+      ...p,
+      protocolo_confirmacao_status: 'aguardando',
+      protocolo_confirmacao_tipo: tipo,
+      protocolo_confirmacao_enviado_em: new Date().toISOString(),
+      protocolo_confirmacao_respondido_em: null,
+    } : p)
+  }
+
   async function finalizarProtocolo() {
     if (!patient) return
     const aplicadas = doses.filter(d => d.dose_mg != null)
@@ -325,7 +343,7 @@ export default function Paciente() {
     }
     const temReceita = doses.some(d => d.receita_url) || purchases.some(p => p.receita_url)
     const avisoReceita = temReceita ? '' : '\n\n(Nenhuma receita anexada — pode finalizar mesmo assim, só um lembrete pra pedir depois.)'
-    if (!confirm(`Finalizar o protocolo de ${patient.nome} e enviar o relatório de doses aplicadas por WhatsApp?${avisoReceita}`)) return
+    if (!confirm(`Finalizar o protocolo de ${patient.nome}, enviar o relatório de doses aplicadas e pedir a confirmação do paciente por WhatsApp?${avisoReceita}`)) return
     setFinalizando(true)
     const { error } = await supabase.functions.invoke('send-protocol-report', {
       body: {
@@ -334,12 +352,23 @@ export default function Paciente() {
         doses: doses.map(d => ({ semana: d.semana, dose_mg: d.dose_mg, data_aplicacao: d.data_aplicacao })),
       },
     })
-    setFinalizando(false)
     if (error) {
+      setFinalizando(false)
       alert('Erro ao enviar o relatório. Tente novamente.')
       return
     }
-    alert('Relatório enviado! O paciente vai receber no WhatsApp.')
+    await enviarConfirmacaoProtocolo('termino')
+    setFinalizando(false)
+    alert('Relatório enviado! O paciente vai receber no WhatsApp, junto com um botão pra confirmar que está de acordo com o término.')
+  }
+
+  async function iniciarNovoProtocolo() {
+    if (!patient) return
+    if (!confirm(`Enviar pro ${patient.nome} um pedido de confirmação por WhatsApp pra iniciar um novo protocolo?`)) return
+    setFinalizando(true)
+    await enviarConfirmacaoProtocolo('novo')
+    setFinalizando(false)
+    alert('Botão de confirmação enviado! Assim que o paciente responder, a ficha atualiza sozinha.')
   }
 
   async function toggleAtivo() {
@@ -399,7 +428,7 @@ export default function Paciente() {
 
       {/* Dados do paciente */}
       <div className={`bg-white rounded-xl border p-6 ${patient.ativo === false ? 'border-gray-300 bg-gray-50' : 'border-gray-200'}`}>
-        <div className="flex items-start justify-between gap-3 mb-4">
+        <div className="flex items-start justify-between gap-3 mb-2">
           <div
             className="flex items-center gap-2 cursor-pointer select-none min-w-0"
             onClick={() => setShowPatientInfo(v => !v)}
@@ -450,6 +479,13 @@ export default function Paciente() {
               {finalizando ? 'Enviando...' : '✓ Finalizar Protocolo'}
             </button>
             <button
+              onClick={iniciarNovoProtocolo}
+              disabled={finalizando}
+              className="text-xs px-3 py-1.5 rounded-lg border border-blue-300 text-blue-700 hover:bg-blue-50 font-medium transition-colors disabled:opacity-50"
+            >
+              {finalizando ? 'Enviando...' : '▶ Iniciar Novo Protocolo'}
+            </button>
+            <button
               onClick={deletarPaciente}
               className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 font-medium transition-colors"
             >
@@ -457,6 +493,28 @@ export default function Paciente() {
             </button>
           </div>
         </div>
+
+        {patient.protocolo_confirmacao_status && (
+          <div className="mb-4">
+            {patient.protocolo_confirmacao_status === 'aguardando' && (
+              <span className="inline-flex items-center gap-1 text-xs bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-full font-medium">
+                ⏳ Aguardando confirmação do paciente sobre {patient.protocolo_confirmacao_tipo === 'novo' ? 'iniciar novo protocolo' : 'o término do protocolo'}
+                {patient.protocolo_confirmacao_enviado_em && ` (enviado ${format(new Date(patient.protocolo_confirmacao_enviado_em), "dd/MM 'às' HH:mm", { locale: ptBR })})`}
+              </span>
+            )}
+            {patient.protocolo_confirmacao_status === 'confirmado' && (
+              <span className="inline-flex items-center gap-1 text-xs bg-green-50 text-green-700 border border-green-200 px-2.5 py-1 rounded-full font-medium">
+                ✓ Paciente confirmou {patient.protocolo_confirmacao_tipo === 'novo' ? 'o novo protocolo' : 'o término'}
+                {patient.protocolo_confirmacao_respondido_em && ` em ${format(new Date(patient.protocolo_confirmacao_respondido_em), "dd/MM 'às' HH:mm", { locale: ptBR })}`}
+              </span>
+            )}
+            {patient.protocolo_confirmacao_status === 'recusado' && (
+              <span className="inline-flex items-center gap-1 text-xs bg-red-50 text-red-600 border border-red-200 px-2.5 py-1 rounded-full font-medium">
+                ✕ Paciente NÃO confirmou {patient.protocolo_confirmacao_tipo === 'novo' ? 'o novo protocolo' : 'o término'} — falar com a clínica
+              </span>
+            )}
+          </div>
+        )}
 
         {showPatientInfo && (editingPatient ? (
           <div className="space-y-3">
