@@ -58,6 +58,8 @@ export interface Bioimpedancia {
   arquivo_url: string
   observacoes: string | null
   created_at: string
+  analise_gpt: string | null
+  analise_gerada_em: string | null
 }
 
 export interface EstoqueConfig {

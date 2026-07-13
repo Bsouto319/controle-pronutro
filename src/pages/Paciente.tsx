@@ -43,6 +43,7 @@ export default function Paciente() {
   const [bioForm, setBioForm] = useState({ data_exame: '', observacoes: '' })
   const [bioFile, setBioFile] = useState<File | null>(null)
   const [savingBio, setSavingBio] = useState(false)
+  const [analisandoBio, setAnalisandoBio] = useState<Record<string, boolean>>({})
 
   // Edição de dados do paciente
   const [editingPatient, setEditingPatient] = useState(false)
@@ -220,23 +221,37 @@ export default function Paciente() {
       const { error: upErr } = await supabase.storage.from('bioimpedancia').upload(path, bioFile, { upsert: true })
       if (upErr) throw upErr
       const { data: urlData } = supabase.storage.from('bioimpedancia').getPublicUrl(path)
-      const { error } = await supabase.from('pronutro_bioimpedancia').insert({
+      const { data: inserted, error } = await supabase.from('pronutro_bioimpedancia').insert({
         patient_id: id,
         data_exame: bioForm.data_exame,
         arquivo_url: urlData.publicUrl,
         observacoes: bioForm.observacoes || null,
-      })
+      }).select().single()
       if (error) throw error
       setBioForm({ data_exame: '', observacoes: '' })
       setBioFile(null)
       if (bioFileInputRef.current) bioFileInputRef.current.value = ''
       const { data } = await supabase.from('pronutro_bioimpedancia').select('*').eq('patient_id', id).order('data_exame', { ascending: false })
       setBioimpedancias(data ?? [])
+      if (inserted) analisarBioimpedancia(inserted.id)
     } catch (err) {
       alert('Erro ao anexar o exame de bioimpedância.')
       console.error(err)
     } finally {
       setSavingBio(false)
+    }
+  }
+
+  async function analisarBioimpedancia(bioId: string) {
+    setAnalisandoBio(a => ({ ...a, [bioId]: true }))
+    try {
+      const { data, error } = await supabase.functions.invoke('analyze-bioimpedancia', { body: { bioimpedancia_id: bioId } })
+      if (error || !data?.analise) throw error ?? new Error('sem analise')
+      setBioimpedancias(prev => prev.map(b => b.id === bioId ? { ...b, analise_gpt: data.analise, analise_gerada_em: new Date().toISOString() } : b))
+    } catch (err) {
+      console.error('analisarBioimpedancia', err)
+    } finally {
+      setAnalisandoBio(a => ({ ...a, [bioId]: false }))
     }
   }
 
@@ -734,19 +749,35 @@ export default function Paciente() {
         <p className="text-xs text-gray-400 mb-4">Anexe o relatório entregue pela equipe InBody a cada exame.</p>
 
         {bioimpedancias.length > 0 && (
-          <div className="space-y-1.5 mb-4">
+          <div className="space-y-2 mb-4">
             {bioimpedancias.map((b) => (
-              <div key={b.id} className="flex items-start justify-between gap-2 bg-purple-50/50 border border-purple-100 rounded-lg px-3 py-2 text-sm">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 min-w-0">
-                  <span className="text-purple-700 font-semibold">
-                    {format(new Date(b.data_exame + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}
-                  </span>
-                  {b.observacoes && <span className="text-gray-400 text-xs truncate max-w-[200px]">{b.observacoes}</span>}
-                  <a href={b.arquivo_url} target="_blank" rel="noopener noreferrer" className="text-brand text-xs font-medium hover:underline">
-                    📄 Ver relatório
-                  </a>
+              <div key={b.id} className="bg-purple-50/50 border border-purple-100 rounded-lg px-3 py-2 text-sm">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 min-w-0">
+                    <span className="text-purple-700 font-semibold">
+                      {format(new Date(b.data_exame + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}
+                    </span>
+                    {b.observacoes && <span className="text-gray-400 text-xs truncate max-w-[200px]">{b.observacoes}</span>}
+                    <a href={b.arquivo_url} target="_blank" rel="noopener noreferrer" className="text-brand text-xs font-medium hover:underline">
+                      📄 Ver relatório
+                    </a>
+                  </div>
+                  <button onClick={() => deleteBioimpedancia(b.id)} className="text-red-400 hover:text-red-600 text-xs flex-shrink-0">✕</button>
                 </div>
-                <button onClick={() => deleteBioimpedancia(b.id)} className="text-red-400 hover:text-red-600 text-xs flex-shrink-0">✕</button>
+
+                <div className="mt-2 pt-2 border-t border-purple-100/70">
+                  {analisandoBio[b.id] ? (
+                    <p className="text-xs text-purple-400 italic">🤖 Gerando análise da IA...</p>
+                  ) : b.analise_gpt ? (
+                    <div>
+                      <p className="text-xs font-semibold text-purple-600 mb-1">🤖 Análise da IA:</p>
+                      <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-line">{b.analise_gpt}</p>
+                      <button onClick={() => analisarBioimpedancia(b.id)} className="text-xs text-purple-500 hover:underline mt-1">Reanalisar</button>
+                    </div>
+                  ) : (
+                    <button onClick={() => analisarBioimpedancia(b.id)} className="text-xs text-purple-600 hover:underline">🤖 Gerar análise da IA</button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
