@@ -13,6 +13,7 @@ export interface Patient {
   protocolo_confirmacao_tipo: 'termino' | 'novo' | null
   protocolo_confirmacao_enviado_em: string | null
   protocolo_confirmacao_respondido_em: string | null
+  ciclo_atual: number
 }
 
 export interface Contract {
@@ -71,6 +72,7 @@ export interface EstoqueConfig {
 export interface DoseRecord {
   id: string
   patient_id: string
+  ciclo: number
   semana: number
   dose_mg: number | null
   data_compra: string | null
@@ -87,6 +89,7 @@ export interface DoseRecord {
 export interface EvolucaoRecord {
   id: string
   patient_id: string
+  ciclo: number
   semana: number
   peso_kg: number | null
   gordura_pct: number | null

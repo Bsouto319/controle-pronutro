@@ -38,6 +38,7 @@ export default function Paciente() {
   const [numSemanas, setNumSemanas] = useState(8)
   const [uploadingPdf, setUploadingPdf] = useState<number | null>(null)
   const [expandedWeeks, setExpandedWeeks] = useState<Record<number, boolean>>({})
+  const [expandedCiclos, setExpandedCiclos] = useState<Record<number, boolean>>({})
   const [showPatientInfo, setShowPatientInfo] = useState(false)
   const [bioimpedancias, setBioimpedancias] = useState<Bioimpedancia[]>([])
   const [bioForm, setBioForm] = useState({ data_exame: '', observacoes: '' })
@@ -70,17 +71,22 @@ export default function Paciente() {
     setEvolucao(ev ?? [])
     setBioimpedancias(bio ?? [])
 
+    // Só a semana/formulário do ciclo em andamento — ciclos anteriores ficam só no histórico
+    const cicloAtual = p?.ciclo_atual ?? 1
+    const doseAtual = ((d as DoseRecord[]) ?? []).filter(r => r.ciclo === cicloAtual)
+    const evoAtual = ((ev as EvolucaoRecord[]) ?? []).filter(r => r.ciclo === cicloAtual)
+
     // Número de semanas dinâmico: max entre 8 e maior semana existente + 1
-    const maxExisting = d && d.length > 0 ? Math.max(...(d as DoseRecord[]).map(r => r.semana)) : 0
+    const maxExisting = doseAtual.length > 0 ? Math.max(...doseAtual.map(r => r.semana)) : 0
     const total = Math.max(8, maxExisting + 1)
     setNumSemanas(total)
 
     const initial: Record<number, Partial<DoseRecord>> = {}
     const evoInitial: Record<number, { peso_kg: string; gordura_pct: string }> = {}
     for (let s = 1; s <= total; s++) {
-      const found = (d as DoseRecord[])?.find(r => r.semana === s)
+      const found = doseAtual.find(r => r.semana === s)
       initial[s] = found ?? { semana: s }
-      const foundEv = (ev as EvolucaoRecord[])?.find(r => r.semana === s)
+      const foundEv = evoAtual.find(r => r.semana === s)
       evoInitial[s] = {
         peso_kg: foundEv?.peso_kg?.toString() ?? '',
         gordura_pct: foundEv?.gordura_pct?.toString() ?? '',
@@ -96,8 +102,10 @@ export default function Paciente() {
   // Assim que abrir a ficha, já leva a equipe direto pra proxima dose a preencher
   useEffect(() => {
     if (loading) return
+    const cicloAtual = patient?.ciclo_atual ?? 1
+    const doseAtual = doses.filter(d => d.ciclo === cicloAtual)
     const primeiraPendente = Array.from({ length: numSemanas }, (_, i) => i + 1)
-      .find(s => !doses.find(d => d.semana === s)?.data_aplicacao)
+      .find(s => !doseAtual.find(d => d.semana === s)?.data_aplicacao)
     if (!primeiraPendente) return
     const el = document.getElementById(`semana-${primeiraPendente}`)
     if (el) {
@@ -107,10 +115,14 @@ export default function Paciente() {
   }, [loading, id])
 
   const round2 = (n: number) => Math.round(n * 100) / 100
+  const cicloAtual = patient?.ciclo_atual ?? 1
+  const dosesAtual = doses.filter(d => d.ciclo === cicloAtual)
   const totalComprado = round2(purchases.reduce((acc, p) => acc + Number(p.quantidade_mg), 0))
   const totalAplicado = round2(doses.reduce((acc, d) => acc + Number(d.dose_mg ?? 0), 0))
+  const totalAplicadoCiclosAnteriores = round2(doses.filter(d => d.ciclo < cicloAtual).reduce((acc, d) => acc + Number(d.dose_mg ?? 0), 0))
   const saldo = round2(totalComprado - totalAplicado)
-  const proximaSemana = doses.length + 1
+  const proximaSemana = dosesAtual.length + 1
+  const ciclosAnteriores = Array.from(new Set(doses.filter(d => d.ciclo < cicloAtual).map(d => d.ciclo))).sort((a, b) => b - a)
 
   const setField = (semana: number, field: string, value: string) =>
     setDoseForm((f) => {
@@ -130,18 +142,18 @@ export default function Paciente() {
     setUploadingPdf(semana)
     try {
       const ext = file.name.split('.').pop() ?? 'pdf'
-      const path = `${id}/semana_${semana}.${ext}`
+      const path = `${id}/ciclo${cicloAtual}_semana_${semana}.${ext}`
       const { error } = await supabase.storage.from('receitas').upload(path, file, { upsert: true })
       if (error) throw error
       const { data: urlData } = supabase.storage.from('receitas').getPublicUrl(path)
       const receita_url = urlData.publicUrl
       // Salva URL no banco imediatamente
-      const existing = doses.find(d => d.semana === semana)
+      const existing = dosesAtual.find(d => d.semana === semana)
       if (existing) {
         await supabase.from('pronutro_dose_records').update({ receita_url }).eq('id', existing.id)
       }
       setDoseForm(f => ({ ...f, [semana]: { ...f[semana], receita_url } }))
-      setDoses(prev => prev.map(d => d.semana === semana ? { ...d, receita_url } : d))
+      setDoses(prev => prev.map(d => d.semana === semana && d.ciclo === cicloAtual ? { ...d, receita_url } : d))
     } catch (err) {
       alert('Erro ao fazer upload do PDF.')
       console.error(err)
@@ -155,17 +167,17 @@ export default function Paciente() {
     setUploadingPdf(1)
     try {
       const { data: files } = await supabase.storage.from('receitas').list(id)
-      const alvos = (files ?? []).filter(f => f.name.startsWith('semana_1')).map(f => `${id}/${f.name}`)
+      const alvos = (files ?? []).filter(f => f.name.startsWith(`ciclo${cicloAtual}_semana_1`)).map(f => `${id}/${f.name}`)
       if (alvos.length) {
         const { error } = await supabase.storage.from('receitas').remove(alvos)
         if (error) throw error
       }
-      const existing = doses.find(d => d.semana === 1)
+      const existing = dosesAtual.find(d => d.semana === 1)
       if (existing) {
         await supabase.from('pronutro_dose_records').update({ receita_url: null }).eq('id', existing.id)
       }
       setDoseForm(f => ({ ...f, 1: { ...f[1], receita_url: null } }))
-      setDoses(prev => prev.map(d => d.semana === 1 ? { ...d, receita_url: null } : d))
+      setDoses(prev => prev.map(d => d.semana === 1 && d.ciclo === cicloAtual ? { ...d, receita_url: null } : d))
     } catch (err) {
       alert('Erro ao remover o anexo.')
       console.error(err)
@@ -266,10 +278,11 @@ export default function Paciente() {
     const data = doseForm[semana]
     const sig = sigRefs.current[semana]
     const sigData = sig && !sig.isEmpty() ? sig.toDataURL() : (data.assinatura_paciente ?? null)
-    const receitaSemana1 = doseForm[1]?.receita_url ?? doses.find(d => d.semana === 1)?.receita_url ?? null
+    const receitaSemana1 = doseForm[1]?.receita_url ?? dosesAtual.find(d => d.semana === 1)?.receita_url ?? null
 
-    const payload: Partial<DoseRecord> & { patient_id: string; semana: number } = {
+    const payload: Partial<DoseRecord> & { patient_id: string; semana: number; ciclo: number } = {
       patient_id: id!,
+      ciclo: cicloAtual,
       semana,
       dose_mg: data.dose_mg ?? null,
       proxima_dose_mg: data.proxima_dose_mg ?? null,
@@ -282,7 +295,7 @@ export default function Paciente() {
       receita_url: data.receita_url ?? (semana > 1 ? receitaSemana1 : null),
     }
 
-    const existing = doses.find((d) => d.semana === semana)
+    const existing = dosesAtual.find((d) => d.semana === semana)
     if (existing) {
       await supabase.from('pronutro_dose_records').update(payload).eq('id', existing.id)
     } else {
@@ -293,11 +306,12 @@ export default function Paciente() {
     if (evo?.peso_kg) {
       await supabase.from('pronutro_evolucao').upsert({
         patient_id: id!,
+        ciclo: cicloAtual,
         semana,
         peso_kg: Number(evo.peso_kg) || null,
         gordura_pct: evo.gordura_pct ? Number(evo.gordura_pct) : null,
         data_medicao: data.data_aplicacao ?? new Date().toISOString().split('T')[0],
-      }, { onConflict: 'patient_id,semana' })
+      }, { onConflict: 'patient_id,ciclo,semana' })
       const { data: evUp } = await supabase.from('pronutro_evolucao').select('*').eq('patient_id', id).order('semana')
       setEvolucao(evUp ?? [])
     }
@@ -351,12 +365,12 @@ export default function Paciente() {
 
   async function finalizarProtocolo() {
     if (!patient) return
-    const aplicadas = doses.filter(d => d.dose_mg != null)
+    const aplicadas = dosesAtual.filter(d => d.dose_mg != null)
     if (aplicadas.length === 0) {
-      alert('Nenhuma dose aplicada registrada ainda.')
+      alert('Nenhuma dose aplicada registrada neste ciclo ainda.')
       return
     }
-    const temReceita = doses.some(d => d.receita_url) || purchases.some(p => p.receita_url)
+    const temReceita = dosesAtual.some(d => d.receita_url) || purchases.some(p => p.receita_url)
     const avisoReceita = temReceita ? '' : '\n\n(Nenhuma receita anexada — pode finalizar mesmo assim, só um lembrete pra pedir depois.)'
     if (!confirm(`Finalizar o protocolo de ${patient.nome}, enviar o relatório de doses aplicadas e pedir a confirmação do paciente por WhatsApp?${avisoReceita}`)) return
     setFinalizando(true)
@@ -364,7 +378,7 @@ export default function Paciente() {
       body: {
         patient_name: patient.nome,
         patient_phone: patient.telefone,
-        doses: doses.map(d => ({ semana: d.semana, dose_mg: d.dose_mg, data_aplicacao: d.data_aplicacao })),
+        doses: dosesAtual.map(d => ({ semana: d.semana, dose_mg: d.dose_mg, data_aplicacao: d.data_aplicacao })),
       },
     })
     if (error) {
@@ -372,18 +386,28 @@ export default function Paciente() {
       alert('Erro ao enviar o relatório. Tente novamente.')
       return
     }
+
+    // Arquiva o ciclo atual (fica salvo no histórico da ficha) e já inicia o próximo automaticamente
+    const novoCiclo = cicloAtual + 1
+    await supabase.from('pronutro_patients').update({ ciclo_atual: novoCiclo }).eq('id', patient.id)
+    setPatient(p => p ? { ...p, ciclo_atual: novoCiclo } : p)
+    setNumSemanas(8)
+    setDoseForm({})
+    setEvolucaoForm({})
+    setExpandedWeeks({})
+
     await enviarConfirmacaoProtocolo('termino')
     setFinalizando(false)
-    alert('Relatório enviado! O paciente vai receber no WhatsApp, junto com um botão pra confirmar que está de acordo com o término.')
+    alert('Protocolo anterior salvo no histórico e novo ciclo já iniciado! O paciente vai receber no WhatsApp um relatório do que foi feito, junto com um botão pra confirmar que está de acordo com o término.')
   }
 
   async function iniciarNovoProtocolo() {
     if (!patient) return
-    if (!confirm(`Enviar pro ${patient.nome} um pedido de confirmação por WhatsApp pra iniciar um novo protocolo?`)) return
+    if (!confirm(`Enviar pro ${patient.nome} um aviso por WhatsApp de que um novo protocolo foi iniciado?`)) return
     setFinalizando(true)
     await enviarConfirmacaoProtocolo('novo')
     setFinalizando(false)
-    alert('Botão de confirmação enviado! Assim que o paciente responder, a ficha atualiza sozinha.')
+    alert('Aviso enviado ao paciente.')
   }
 
   async function toggleAtivo() {
@@ -866,8 +890,10 @@ export default function Paciente() {
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
           <div>
-            <h2 className="font-bold text-gray-800">Esquema de Doses</h2>
-            <p className="text-xs text-gray-400 mt-0.5">{numSemanas} semanas cadastradas · {doses.filter(d => d.data_aplicacao).length} aplicadas</p>
+            <h2 className="font-bold text-gray-800">
+              Esquema de Doses{cicloAtual > 1 && <span className="ml-2 text-xs font-normal bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full align-middle">Ciclo {cicloAtual}</span>}
+            </h2>
+            <p className="text-xs text-gray-400 mt-0.5">{numSemanas} semanas cadastradas · {dosesAtual.filter(d => d.data_aplicacao).length} aplicadas</p>
           </div>
           {saldo > 0 && proximaSemana <= numSemanas && (
             <div className="text-xs bg-green-50 border border-green-200 rounded-lg px-3 py-1.5 text-green-700">
@@ -880,14 +906,14 @@ export default function Paciente() {
           {(() => {
             // Primeira semana sem data_aplicacao, em ordem — é a próxima que a equipe deve preencher
             const primeiraPendente = Array.from({ length: numSemanas }, (_, i) => i + 1)
-              .find(s => !doses.find(d => d.semana === s)?.data_aplicacao)
+              .find(s => !dosesAtual.find(d => d.semana === s)?.data_aplicacao)
             return Array.from({ length: numSemanas }, (_, i) => i + 1).map((semana) => {
-            const saved = doses.find((d) => d.semana === semana)
+            const saved = dosesAtual.find((d) => d.semana === semana)
             const form = doseForm[semana] ?? {}
             const isSaved = !!saved?.data_aplicacao
             const doseSemana = Number(saved?.dose_mg ?? 0)
-            const saldoAposEsta = round2(totalComprado - doses.filter(d => d.semana <= semana && d.dose_mg).reduce((a, d) => a + Number(d.dose_mg), 0))
-            const receitaSemana1 = doseForm[1]?.receita_url ?? doses.find(d => d.semana === 1)?.receita_url ?? null
+            const saldoAposEsta = round2(totalComprado - totalAplicadoCiclosAnteriores - dosesAtual.filter(d => d.semana <= semana && d.dose_mg).reduce((a, d) => a + Number(d.dose_mg), 0))
+            const receitaSemana1 = doseForm[1]?.receita_url ?? dosesAtual.find(d => d.semana === 1)?.receita_url ?? null
             const receitaUrl = (form.receita_url ?? saved?.receita_url) ?? (semana > 1 ? receitaSemana1 : null)
             const isPrimeira = semana === 1
             const isProxima = semana === primeiraPendente
@@ -1123,6 +1149,58 @@ export default function Paciente() {
           + Adicionar {numSemanas + 1}º Retorno
         </button>
       </div>
+
+      {/* Histórico de protocolos anteriores — arquivado ao Finalizar Protocolo */}
+      {ciclosAnteriores.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h2 className="font-bold text-gray-800 mb-3">Histórico de Protocolos</h2>
+          <div className="space-y-2">
+            {ciclosAnteriores.map((ciclo) => {
+              const dosesCiclo = doses.filter(d => d.ciclo === ciclo).sort((a, b) => a.semana - b.semana)
+              const evoCiclo = evolucao.filter(e => e.ciclo === ciclo).sort((a, b) => a.semana - b.semana)
+              const aplicadasCiclo = dosesCiclo.filter(d => d.data_aplicacao)
+              const isOpen = expandedCiclos[ciclo] === true
+              const dataInicio = dosesCiclo[0]?.data_aplicacao
+              const dataFim = aplicadasCiclo[aplicadasCiclo.length - 1]?.data_aplicacao
+              return (
+                <div key={ciclo} className="border border-gray-200 rounded-lg overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedCiclos(c => ({ ...c, [ciclo]: !isOpen }))}
+                    className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+                  >
+                    <span className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                      <span className="text-gray-400 text-xs">{isOpen ? '▾' : '▸'}</span>
+                      Ciclo {ciclo}
+                      <span className="text-xs text-gray-400 font-normal">
+                        {aplicadasCiclo.length} dose{aplicadasCiclo.length !== 1 ? 's' : ''} aplicada{aplicadasCiclo.length !== 1 ? 's' : ''}
+                        {dataInicio && dataFim && ` · ${format(new Date(dataInicio + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })} a ${format(new Date(dataFim + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}`}
+                      </span>
+                    </span>
+                  </button>
+                  {isOpen && (
+                    <div className="p-4 space-y-2">
+                      {dosesCiclo.map((d) => {
+                        const evo = evoCiclo.find(e => e.semana === d.semana)
+                        return (
+                          <div key={d.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600 border-b border-gray-100 pb-2 last:border-0">
+                            <span className="font-semibold text-gray-700">{d.semana === 1 ? '1ª dose' : `${d.semana}ª semana`}</span>
+                            <span>Dose: <b>{d.dose_mg ?? '—'} mg</b></span>
+                            <span>Aplicada em: <b>{d.data_aplicacao ? format(new Date(d.data_aplicacao + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR }) : '—'}</b></span>
+                            {evo?.peso_kg != null && <span>Peso: <b>{evo.peso_kg} kg</b></span>}
+                            {evo?.gordura_pct != null && <span>Gordura: <b>{evo.gordura_pct}%</b></span>}
+                            {d.observacoes && <span className="text-gray-400">Obs: {d.observacoes}</span>}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
