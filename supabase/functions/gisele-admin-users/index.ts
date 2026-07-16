@@ -6,11 +6,47 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const RESEND_KEY = Deno.env.get('RESEND_API_KEY') || '';
+
 function randomPassword(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
   let out = '';
   for (let i = 0; i < 10; i++) out += chars[Math.floor(Math.random() * chars.length)];
   return out;
+}
+
+// Gera o link de definicao de senha via admin API (nao depende do "Site URL" do
+// projeto Supabase, que e compartilhado com controle-pronutro e o gastozap e
+// pode redirecionar pro app errado) e manda por Resend.
+async function enviarLinkDeSenha(adminClient: ReturnType<typeof createClient>, email: string, name: string | null): Promise<boolean> {
+  const { data, error } = await adminClient.auth.admin.generateLink({
+    type: 'recovery',
+    email,
+    options: { redirectTo: 'https://controle-gisele.vercel.app/reset-senha' },
+  });
+  if (error || !data?.properties?.action_link) return false;
+
+  const link = data.properties.action_link;
+  const saudacao = name ? `Olá, ${name}!` : 'Olá!';
+  const html = `
+    <p>${saudacao}</p>
+    <p>Você foi cadastrada no sistema da Dra. Gisele Falcão. Clique no botão abaixo para criar sua senha de acesso:</p>
+    <p><a href="${link}" style="background:#C4956A;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;">Criar minha senha</a></p>
+    <p>Se o botão não funcionar, copie e cole este link no navegador:<br>${link}</p>
+  `;
+  const text = `${saudacao}\n\nVocê foi cadastrada no sistema da Dra. Gisele Falcão. Acesse o link abaixo para criar sua senha:\n\n${link}`;
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${RESEND_KEY}` },
+    body: JSON.stringify({
+      from: 'Gisele Falcão <noreply@btechsouto.shop>',
+      to: [email],
+      subject: 'Defina sua senha de acesso — Gisele Falcão',
+      html, text,
+    }),
+  });
+  return res.ok;
 }
 
 Deno.serve(async (req: Request) => {
@@ -107,11 +143,7 @@ Deno.serve(async (req: Request) => {
         }
         userId = data.user.id;
 
-        const anonClient = createClient(supabaseUrl, anonKey);
-        const { error: resetError } = await anonClient.auth.resetPasswordForEmail(email, {
-          redirectTo: 'https://controle-gisele.vercel.app/reset-senha',
-        });
-        emailSent = !resetError;
+        emailSent = await enviarLinkDeSenha(adminClient, email, name ?? null);
       }
 
       const { error: giseleErr } = await adminClient
@@ -130,12 +162,14 @@ Deno.serve(async (req: Request) => {
           status: 400, headers: { 'Content-Type': 'application/json', ...CORS },
         });
       }
-      const anonClient = createClient(supabaseUrl, anonKey);
-      const { error: resetError } = await anonClient.auth.resetPasswordForEmail(email, {
-        redirectTo: 'https://controle-gisele.vercel.app/reset-senha',
-      });
-      if (resetError) {
-        return new Response(JSON.stringify({ error: resetError.message }), {
+      const { data: existingRow } = await adminClient
+        .from('gisele_users')
+        .select('nome')
+        .eq('email', email)
+        .maybeSingle();
+      const ok = await enviarLinkDeSenha(adminClient, email, existingRow?.nome ?? name ?? null);
+      if (!ok) {
+        return new Response(JSON.stringify({ error: 'Erro ao enviar o email.' }), {
           status: 400, headers: { 'Content-Type': 'application/json', ...CORS },
         });
       }
