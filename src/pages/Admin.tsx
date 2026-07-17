@@ -5,6 +5,7 @@ import type { Patient, Contract, DoseRecord, Purchase } from '../types'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import ImportCSVModal from '../components/ImportCSVModal'
+import { normalizeText } from '../lib/normalize'
 
 interface PatientWithContract extends Patient {
   contract?: Contract
@@ -109,7 +110,7 @@ export default function Admin() {
   const filtered = byTab
     .filter(
       (p) =>
-        (p.nome.toLowerCase().includes(search.toLowerCase()) || p.cpf.includes(search)) &&
+        (normalizeText(p.nome).includes(normalizeText(search)) || p.cpf.includes(search)) &&
         (!filterDate || p.doses.some((d) => d.data_aplicacao === filterDate))
     )
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }))

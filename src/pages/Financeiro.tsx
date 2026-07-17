@@ -6,6 +6,7 @@ import type { Pagamento, Patient } from '../types'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import ImportPagamentosCSVModal from '../components/ImportPagamentosCSVModal'
+import { normalizeText } from '../lib/normalize'
 
 interface PagamentoComPaciente extends Pagamento {
   paciente_nome?: string
@@ -137,7 +138,7 @@ export default function Financeiro() {
 
   const filtered = pagamentos.filter((p) => {
     if (statusFilter !== 'todos' && p.status !== statusFilter) return false
-    if (search && !p.paciente_nome?.toLowerCase().includes(search.toLowerCase())) return false
+    if (search && !normalizeText(p.paciente_nome ?? '').includes(normalizeText(search))) return false
     if (dataInicio && p.data_pagamento < dataInicio) return false
     if (dataFim && p.data_pagamento > dataFim) return false
     return true
@@ -299,7 +300,7 @@ export default function Financeiro() {
           />
           {showSearchDropdown && search && (
             <div className="absolute z-20 mt-1 w-full max-h-64 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-lg">
-              {patients.filter((p) => p.nome.toLowerCase().includes(search.toLowerCase())).length > 0 && (
+              {patients.filter((p) => normalizeText(p.nome).includes(normalizeText(search))).length > 0 && (
                 <p className="text-xs text-gray-400 px-3 pt-2 pb-1">Pacientes cadastrados:</p>
               )}
               {patients
@@ -324,7 +325,7 @@ export default function Financeiro() {
                     </button>
                   </div>
                 ))}
-              {patients.filter((p) => p.nome.toLowerCase().includes(search.toLowerCase())).length === 0 && (
+              {patients.filter((p) => normalizeText(p.nome).includes(normalizeText(search))).length === 0 && (
                 <p className="px-3 py-2 text-xs text-gray-400">Nenhum paciente cadastrado com esse nome.</p>
               )}
             </div>
