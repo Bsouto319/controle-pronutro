@@ -39,39 +39,44 @@ export default function Admin() {
 
   useEffect(() => {
     async function load() {
-      const { data: pts } = await supabase
-        .from('pronutro_patients')
-        .select('*')
-        .order('created_at', { ascending: false })
+      try {
+        const { data: pts } = await supabase
+          .from('pronutro_patients')
+          .select('*')
+          .order('created_at', { ascending: false })
 
-      if (!pts) return setLoading(false)
+        if (!pts) return
 
-      const { data: contracts } = await supabase
-        .from('pronutro_contracts')
-        .select('*')
+        const { data: contracts } = await supabase
+          .from('pronutro_contracts')
+          .select('*')
 
-      const { data: doses } = await supabase
-        .from('pronutro_dose_records')
-        .select('*')
+        const { data: doses } = await supabase
+          .from('pronutro_dose_records')
+          .select('*')
 
-      const { data: purchases } = await supabase
-        .from('pronutro_purchases')
-        .select('*')
+        const { data: purchases } = await supabase
+          .from('pronutro_purchases')
+          .select('*')
 
-      const merged = pts.map((p) => {
-        const patientDoses = doses?.filter((d) => d.patient_id === p.id) ?? []
-        const patientPurchases = (purchases as Purchase[] | null)?.filter((pu) => pu.patient_id === p.id) ?? []
-        const comprado = patientPurchases.reduce((acc, pu) => acc + Number(pu.quantidade_mg), 0)
-        const aplicado = patientDoses.reduce((acc, d) => acc + Number(d.dose_mg ?? 0), 0)
-        return {
-          ...p,
-          contract: contracts?.find((c) => c.patient_id === p.id),
-          doses: patientDoses,
-          saldo: Math.round((comprado - aplicado) * 100) / 100,
-        }
-      })
-      setPatients(merged)
-      setLoading(false)
+        const merged = pts.map((p) => {
+          const patientDoses = doses?.filter((d) => d.patient_id === p.id) ?? []
+          const patientPurchases = (purchases as Purchase[] | null)?.filter((pu) => pu.patient_id === p.id) ?? []
+          const comprado = patientPurchases.reduce((acc, pu) => acc + Number(pu.quantidade_mg), 0)
+          const aplicado = patientDoses.reduce((acc, d) => acc + Number(d.dose_mg ?? 0), 0)
+          return {
+            ...p,
+            contract: contracts?.find((c) => c.patient_id === p.id),
+            doses: patientDoses,
+            saldo: Math.round((comprado - aplicado) * 100) / 100,
+          }
+        })
+        setPatients(merged)
+      } catch (err) {
+        console.error('Erro ao carregar pacientes:', err)
+      } finally {
+        setLoading(false)
+      }
     }
     load()
   }, [])
