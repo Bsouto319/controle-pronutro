@@ -103,26 +103,39 @@ Deno.serve(async (req: Request) => {
           status: 400, headers: { 'Content-Type': 'application/json', ...CORS },
         });
       }
-      const password = randomPassword();
-      const { data, error } = await adminClient.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: name ? { name } : undefined,
-      });
-      if (error) {
-        return new Response(JSON.stringify({ error: error.message }), {
-          status: 400, headers: { 'Content-Type': 'application/json', ...CORS },
+
+      // auth.users e compartilhado com controle-gisele e gastozap — se o email ja
+      // existe (ex: mesma pessoa em outro app), so reenviamos o link em vez de
+      // tentar criar duplicado (o que travava com "User already registered").
+      const { data: existingList } = await adminClient.auth.admin.listUsers();
+      const existing = existingList.users.find(u => u.email?.toLowerCase() === email.toLowerCase());
+
+      let password: string | null = null;
+      let emailSent: boolean;
+
+      if (existing) {
+        emailSent = await enviarLinkDeSenha(adminClient, email, name ?? null);
+      } else {
+        password = randomPassword();
+        const { data, error } = await adminClient.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true,
+          user_metadata: name ? { name } : undefined,
         });
+        if (error || !data.user) {
+          return new Response(JSON.stringify({ error: error?.message ?? 'erro ao criar usuário' }), {
+            status: 400, headers: { 'Content-Type': 'application/json', ...CORS },
+          });
+        }
+        emailSent = await enviarLinkDeSenha(adminClient, email, name ?? null);
       }
 
-      // Dispara o email de definicao de senha (mesmo fluxo do "Esqueceu a senha?")
-      const emailSent = await enviarLinkDeSenha(adminClient, email, name ?? null);
-
       return new Response(JSON.stringify({
-        email: data.user?.email,
+        email,
         password,
         email_sent: emailSent,
+        already_existed: !!existing,
       }), {
         headers: { 'Content-Type': 'application/json', ...CORS },
       });
