@@ -60,7 +60,9 @@ export interface Bioimpedancia {
   observacoes: string | null
   created_at: string
   analise_gpt: string | null
+  analise_paciente: string | null
   analise_gerada_em: string | null
+  enviado_paciente_em: string | null
 }
 
 export interface EstoqueConfig {
