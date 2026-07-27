@@ -29,6 +29,8 @@ export default function Paciente() {
   const [savingPurchase, setSavingPurchase] = useState(false)
   const [togglingStatus, setTogglingStatus] = useState(false)
   const [finalizando, setFinalizando] = useState(false)
+  const [showFinalizarModal, setShowFinalizarModal] = useState(false)
+  const [semanasParaFinalizar, setSemanasParaFinalizar] = useState<Record<number, boolean>>({})
   const [doseForm, setDoseForm] = useState<Record<number, Partial<DoseRecord>>>({})
   const [evolucao, setEvolucao] = useState<EvolucaoRecord[]>([])
   const [evolucaoForm, setEvolucaoForm] = useState<Record<number, { peso_kg: string; gordura_pct: string }>>({})
@@ -45,6 +47,7 @@ export default function Paciente() {
   const [bioFile, setBioFile] = useState<File | null>(null)
   const [savingBio, setSavingBio] = useState(false)
   const [analisandoBio, setAnalisandoBio] = useState<Record<string, boolean>>({})
+  const [enviandoBio, setEnviandoBio] = useState<Record<string, boolean>>({})
 
   // Edição de dados do paciente
   const [editingPatient, setEditingPatient] = useState(false)
@@ -259,11 +262,40 @@ export default function Paciente() {
     try {
       const { data, error } = await supabase.functions.invoke('analyze-bioimpedancia', { body: { bioimpedancia_id: bioId } })
       if (error || !data?.analise) throw error ?? new Error('sem analise')
-      setBioimpedancias(prev => prev.map(b => b.id === bioId ? { ...b, analise_gpt: data.analise, analise_gerada_em: new Date().toISOString() } : b))
+      setBioimpedancias(prev => prev.map(b => b.id === bioId ? { ...b, analise_gpt: data.analise, analise_paciente: data.analise_paciente ?? null, analise_gerada_em: new Date().toISOString() } : b))
     } catch (err) {
       console.error('analisarBioimpedancia', err)
     } finally {
       setAnalisandoBio(a => ({ ...a, [bioId]: false }))
+    }
+  }
+
+  async function enviarResumoBioimpedancia(b: Bioimpedancia) {
+    if (!patient || !b.analise_paciente) return
+    if (!patient.email && !patient.telefone) {
+      alert('Paciente sem email ou telefone cadastrado.')
+      return
+    }
+    setEnviandoBio(a => ({ ...a, [b.id]: true }))
+    try {
+      const { error } = await supabase.functions.invoke('send-bioimpedancia-resumo', {
+        body: {
+          patient_name: patient.nome,
+          patient_email: patient.email,
+          patient_phone: patient.telefone,
+          data_exame: b.data_exame,
+          analise_paciente: b.analise_paciente,
+        },
+      })
+      if (error) throw error
+      const enviadoEm = new Date().toISOString()
+      await supabase.from('pronutro_bioimpedancia').update({ enviado_paciente_em: enviadoEm }).eq('id', b.id)
+      setBioimpedancias(prev => prev.map(x => x.id === b.id ? { ...x, enviado_paciente_em: enviadoEm } : x))
+    } catch (err) {
+      alert('Erro ao enviar o resultado ao paciente.')
+      console.error('enviarResumoBioimpedancia', err)
+    } finally {
+      setEnviandoBio(a => ({ ...a, [b.id]: false }))
     }
   }
 
@@ -316,7 +348,16 @@ export default function Paciente() {
       setEvolucao(evUp ?? [])
     }
 
+    const { data: updated } = await supabase.from('pronutro_dose_records').select('*').eq('patient_id', id).order('semana')
+    setDoses(updated ?? [])
+
     if (sig && !sig.isEmpty() && !existing?.assinatura_paciente && (patient?.email || patient?.telefone)) {
+      const totalAplicadoAtual = round2((updated ?? []).reduce((acc, d) => acc + Number(d.dose_mg ?? 0), 0))
+      const saldoRestante = round2(totalComprado - totalAplicadoAtual)
+      // Se teve bioimpedancia feita no mesmo dia da aplicacao, manda o resumo junto na mesma mensagem
+      const bioMesmoDia = data.data_aplicacao
+        ? bioimpedancias.find(b => b.data_exame === data.data_aplicacao && b.analise_paciente)
+        : undefined
       supabase.functions.invoke('send-dose-email', {
         body: {
           patient_name: patient.nome,
@@ -326,13 +367,40 @@ export default function Paciente() {
           dose_mg: data.dose_mg ?? null,
           proxima_dose_mg: data.proxima_dose_mg ?? null,
           data_aplicacao: data.data_aplicacao ?? null,
+          proxima_data_aplicacao: data.proxima_data_aplicacao ?? null,
+          saldo_restante_mg: saldoRestante,
+          bioimpedancia_resumo: bioMesmoDia?.analise_paciente ?? null,
         },
       })
+      if (bioMesmoDia && !bioMesmoDia.enviado_paciente_em) {
+        const enviadoEm = new Date().toISOString()
+        await supabase.from('pronutro_bioimpedancia').update({ enviado_paciente_em: enviadoEm }).eq('id', bioMesmoDia.id)
+        setBioimpedancias(prev => prev.map(b => b.id === bioMesmoDia.id ? { ...b, enviado_paciente_em: enviadoEm } : b))
+      }
     }
 
-    const { data: updated } = await supabase.from('pronutro_dose_records').select('*').eq('patient_id', id).order('semana')
-    setDoses(updated ?? [])
     setActiveSig(null)
+    setSaving(null)
+  }
+
+  async function deleteDose(semana: number) {
+    const existing = dosesAtual.find((d) => d.semana === semana)
+    if (!existing) {
+      setDoseForm(f => { const { [semana]: _, ...rest } = f; return rest })
+      return
+    }
+    if (!confirm(`Excluir os dados da ${semana}ª semana? Essa ação não pode ser desfeita.`)) return
+    setSaving(semana)
+
+    await supabase.from('pronutro_dose_records').delete().eq('id', existing.id)
+    await supabase.from('pronutro_evolucao').delete()
+      .eq('patient_id', id!).eq('ciclo', cicloAtual).eq('semana', semana)
+
+    setDoses(prev => prev.filter(d => d.id !== existing.id))
+    setEvolucao(prev => prev.filter(e => !(e.patient_id === id && e.ciclo === cicloAtual && e.semana === semana)))
+    setDoseForm(f => { const { [semana]: _, ...rest } = f; return { ...rest, [semana]: { semana } } })
+    setEvolucaoForm(f => { const { [semana]: _, ...rest } = f; return rest })
+
     setSaving(null)
   }
 
@@ -363,22 +431,39 @@ export default function Paciente() {
     } : p)
   }
 
-  async function finalizarProtocolo() {
+  function abrirModalFinalizar() {
     if (!patient) return
     const aplicadas = dosesAtual.filter(d => d.dose_mg != null)
     if (aplicadas.length === 0) {
       alert('Nenhuma dose aplicada registrada neste ciclo ainda.')
       return
     }
-    const temReceita = dosesAtual.some(d => d.receita_url) || purchases.some(p => p.receita_url)
-    const avisoReceita = temReceita ? '' : '\n\n(Nenhuma receita anexada — pode finalizar mesmo assim, só um lembrete pra pedir depois.)'
-    if (!confirm(`Finalizar o protocolo de ${patient.nome}, enviar o relatório de doses aplicadas e pedir a confirmação do paciente por WhatsApp?${avisoReceita}`)) return
+    const inicial: Record<number, boolean> = {}
+    for (const d of dosesAtual) {
+      inicial[d.semana] = !!d.data_aplicacao
+    }
+    setSemanasParaFinalizar(inicial)
+    setShowFinalizarModal(true)
+  }
+
+  async function confirmarFinalizarProtocolo() {
+    if (!patient) return
+    const dosesSelecionadas = dosesAtual.filter(d => semanasParaFinalizar[d.semana])
+    if (dosesSelecionadas.length === 0) {
+      alert('Selecione ao menos uma semana pra incluir no relatório de finalização.')
+      return
+    }
     setFinalizando(true)
+    const bioMaisRecente = [...bioimpedancias]
+      .filter(b => b.analise_paciente)
+      .sort((a, b) => (a.data_exame < b.data_exame ? 1 : -1))[0]
     const { error } = await supabase.functions.invoke('send-protocol-report', {
       body: {
         patient_name: patient.nome,
         patient_phone: patient.telefone,
-        doses: dosesAtual.map(d => ({ semana: d.semana, dose_mg: d.dose_mg, data_aplicacao: d.data_aplicacao })),
+        doses: dosesSelecionadas.map(d => ({ semana: d.semana, dose_mg: d.dose_mg, data_aplicacao: d.data_aplicacao })),
+        bioimpedancia_resumo: bioMaisRecente?.analise_paciente ?? null,
+        bioimpedancia_data: bioMaisRecente?.data_exame ?? null,
       },
     })
     if (error) {
@@ -395,6 +480,7 @@ export default function Paciente() {
     setDoseForm({})
     setEvolucaoForm({})
     setExpandedWeeks({})
+    setShowFinalizarModal(false)
 
     await enviarConfirmacaoProtocolo('termino')
     setFinalizando(false)
@@ -511,7 +597,7 @@ export default function Paciente() {
               {togglingStatus ? '...' : patient.ativo === false ? '✓ Reativar' : 'Inativar'}
             </button>
             <button
-              onClick={finalizarProtocolo}
+              onClick={abrirModalFinalizar}
               disabled={finalizando}
               className="text-xs px-3 py-1.5 rounded-lg border border-green-300 text-green-700 hover:bg-green-50 font-medium transition-colors disabled:opacity-50"
             >
@@ -796,7 +882,23 @@ export default function Paciente() {
                     <div>
                       <p className="text-xs font-semibold text-purple-600 mb-1">🤖 Análise da IA:</p>
                       <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-line">{b.analise_gpt}</p>
-                      <button onClick={() => analisarBioimpedancia(b.id)} className="text-xs text-purple-500 hover:underline mt-1">Reanalisar</button>
+                      <div className="flex items-center gap-3 mt-1.5">
+                        <button onClick={() => analisarBioimpedancia(b.id)} className="text-xs text-purple-500 hover:underline">Reanalisar</button>
+                        {b.analise_paciente && (
+                          <button
+                            onClick={() => enviarResumoBioimpedancia(b)}
+                            disabled={enviandoBio[b.id]}
+                            className="text-xs text-green-600 hover:underline disabled:opacity-50"
+                          >
+                            {enviandoBio[b.id] ? 'Enviando...' : b.enviado_paciente_em ? '✓ Reenviar ao paciente' : '📲 Enviar resultado ao paciente'}
+                          </button>
+                        )}
+                      </div>
+                      {b.enviado_paciente_em && (
+                        <p className="text-[11px] text-gray-400 mt-1">
+                          Enviado ao paciente em {format(new Date(b.enviado_paciente_em), 'dd/MM/yyyy HH:mm', { locale: ptBR })}
+                        </p>
+                      )}
                     </div>
                   ) : (
                     <button onClick={() => analisarBioimpedancia(b.id)} className="text-xs text-purple-600 hover:underline">🤖 Gerar análise da IA</button>
@@ -965,12 +1067,25 @@ export default function Paciente() {
                       <span className="ml-1 text-xs text-gray-400 font-normal" title="Só admin pode editar depois de preenchido">🔒 bloqueado p/ edição</span>
                     )}
                   </h3>
-                  {isSaved && doseSemana > 0 && (
-                    <span className="text-xs text-gray-400">
-                      Saída: <span className="text-orange-600 font-medium">−{doseSemana} mg</span>
-                      {' '}→ Saldo após: <span className={`font-medium ${saldoAposEsta >= 0 ? 'text-green-600' : 'text-red-600'}`}>{saldoAposEsta} mg</span>
-                    </span>
-                  )}
+                  <div className="flex items-center gap-3">
+                    {isSaved && doseSemana > 0 && (
+                      <span className="text-xs text-gray-400">
+                        Saída: <span className="text-orange-600 font-medium">−{doseSemana} mg</span>
+                        {' '}→ Saldo após: <span className={`font-medium ${saldoAposEsta >= 0 ? 'text-green-600' : 'text-red-600'}`}>{saldoAposEsta} mg</span>
+                      </span>
+                    )}
+                    {isSaved && canEdit && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); deleteDose(semana) }}
+                        disabled={saving === semana}
+                        title="Excluir dados desta semana (ex: preenchida errada)"
+                        className="text-xs text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg px-2 py-1 disabled:opacity-50"
+                      >
+                        🗑️ Excluir
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {isExpanded && (
@@ -1198,6 +1313,60 @@ export default function Paciente() {
                 </div>
               )
             })}
+          </div>
+        </div>
+      )}
+
+      {showFinalizarModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-100">
+              <h3 className="font-bold text-gray-800">Finalizar Protocolo — {patient.nome}</h3>
+              <p className="text-xs text-gray-500 mt-1">Selecione quais semanas entram no relatório de conclusão. Semanas desmarcadas ficam registradas como pendentes neste ciclo (não são apagadas, só não entram no relatório enviado ao paciente).</p>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
+              {[...dosesAtual].sort((a, b) => a.semana - b.semana).map((d) => (
+                <label key={d.id} className="flex items-center gap-3 p-2.5 rounded-lg border border-gray-100 hover:bg-gray-50 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!semanasParaFinalizar[d.semana]}
+                    onChange={(e) => setSemanasParaFinalizar(f => ({ ...f, [d.semana]: e.target.checked }))}
+                    className="w-4 h-4 accent-brand"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium text-gray-800">{d.semana === 1 ? '1ª dose' : `${d.semana}ª semana`}</span>
+                    {d.data_aplicacao ? (
+                      <span className="text-xs text-gray-500 ml-2">
+                        {d.dose_mg ?? '—'} mg · aplicada em {format(new Date(d.data_aplicacao + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-amber-600 ml-2 font-medium">⚠ pendente — sem aplicação registrada</span>
+                    )}
+                  </div>
+                </label>
+              ))}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-3">
+              <span className="text-xs text-gray-400">
+                {Object.values(semanasParaFinalizar).filter(Boolean).length} de {dosesAtual.length} semana(s) selecionada(s)
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowFinalizarModal(false)}
+                  disabled={finalizando}
+                  className="text-sm px-4 py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={confirmarFinalizarProtocolo}
+                  disabled={finalizando}
+                  className="text-sm px-4 py-2 rounded-lg bg-brand text-white hover:bg-brand-dark font-medium disabled:opacity-50"
+                >
+                  {finalizando ? 'Enviando...' : 'Confirmar e Finalizar'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
