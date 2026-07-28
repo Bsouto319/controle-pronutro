@@ -36,6 +36,7 @@ export interface Purchase {
   lote: string | null
   observacoes: string | null
   receita_url: string | null
+  medicamento_id: string | null
   created_at: string
 }
 
@@ -48,6 +49,17 @@ export interface Pagamento {
   referente_a: string
   status: 'pago' | 'pendente' | 'cancelado'
   observacoes: string | null
+  medicamento_id: string | null
+  quantidade_mg: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Medicamento {
+  id: string
+  nome: string
+  estoque_mg: number
+  ativo: boolean
   created_at: string
   updated_at: string
 }

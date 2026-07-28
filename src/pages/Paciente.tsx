@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import SignaturePad, { type SignaturePadHandle } from '../components/SignaturePad'
 import EvolucaoChart from '../components/EvolucaoChart'
 import { useIsAdmin } from '../hooks/useIsAdmin'
-import type { Patient, Contract, DoseRecord, Purchase, EvolucaoRecord, Bioimpedancia, Pagamento } from '../types'
+import type { Patient, Contract, DoseRecord, Purchase, EvolucaoRecord, Bioimpedancia, Pagamento, Medicamento } from '../types'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
@@ -53,6 +53,7 @@ export default function Paciente() {
   const [showPatientInfo, setShowPatientInfo] = useState(false)
   const [bioimpedancias, setBioimpedancias] = useState<Bioimpedancia[]>([])
   const [pagamentos, setPagamentos] = useState<Pagamento[]>([])
+  const [medicamentos, setMedicamentos] = useState<Medicamento[]>([])
   const [bioForm, setBioForm] = useState({ data_exame: '', observacoes: '' })
   const [bioFile, setBioFile] = useState<File | null>(null)
   const [savingBio, setSavingBio] = useState(false)
@@ -69,7 +70,7 @@ export default function Paciente() {
   const bioFileInputRef = useRef<HTMLInputElement>(null)
 
   async function loadData() {
-    const [{ data: p }, { data: c }, { data: d }, { data: pur }, { data: ev }, { data: bio }, { data: pag }] = await Promise.all([
+    const [{ data: p }, { data: c }, { data: d }, { data: pur }, { data: ev }, { data: bio }, { data: pag }, { data: meds }] = await Promise.all([
       supabase.from('pronutro_patients').select('*').eq('id', id).single(),
       supabase.from('pronutro_contracts').select('*').eq('patient_id', id).single(),
       supabase.from('pronutro_dose_records').select('*').eq('patient_id', id).order('semana'),
@@ -77,6 +78,7 @@ export default function Paciente() {
       supabase.from('pronutro_evolucao').select('*').eq('patient_id', id).order('semana'),
       supabase.from('pronutro_bioimpedancia').select('*').eq('patient_id', id).order('data_exame', { ascending: false }),
       supabase.from('pronutro_pagamentos').select('*').eq('patient_id', id).order('data_pagamento', { ascending: false }),
+      supabase.from('pronutro_medicamentos').select('*').order('nome'),
     ])
     setPatient(p)
     setContract(c)
@@ -85,6 +87,7 @@ export default function Paciente() {
     setEvolucao(ev ?? [])
     setBioimpedancias(bio ?? [])
     setPagamentos(pag ?? [])
+    setMedicamentos(meds ?? [])
 
     // Só a semana/formulário do ciclo em andamento — ciclos anteriores ficam só no histórico
     const cicloAtual = p?.ciclo_atual ?? 1
@@ -782,6 +785,11 @@ export default function Paciente() {
                 <div key={pur.id} className="flex items-start justify-between gap-2 bg-blue-50/50 border border-blue-100 rounded-lg px-3 py-2 text-sm">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 min-w-0">
                     <span className="text-blue-600 font-semibold">+{pur.quantidade_mg} mg</span>
+                    {pur.medicamento_id && (
+                      <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-medium">
+                        {medicamentos.find((m) => m.id === pur.medicamento_id)?.nome ?? 'Medicação'}
+                      </span>
+                    )}
                     <span className="text-gray-600">{format(new Date(pur.data_compra + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}</span>
                     {pur.lote && <span className="text-gray-400 text-xs">Lote: {pur.lote}</span>}
                     {pur.observacoes && <span className="text-gray-400 text-xs truncate max-w-[120px]">{pur.observacoes}</span>}
@@ -977,6 +985,14 @@ export default function Paciente() {
                     <span className="text-gray-500">{format(new Date(p.data_pagamento + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}</span>
                     <span className="text-gray-400 mx-1.5">·</span>
                     <span className="text-gray-500">{FORMAS_PAGAMENTO[p.forma_pagamento] ?? p.forma_pagamento}</span>
+                    {p.medicamento_id && p.quantidade_mg && (
+                      <>
+                        <span className="text-gray-400 mx-1.5">·</span>
+                        <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-medium">
+                          {medicamentos.find((m) => m.id === p.medicamento_id)?.nome ?? 'Medicação'} +{p.quantidade_mg}mg
+                        </span>
+                      </>
+                    )}
                   </div>
                   <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                     p.status === 'pago' ? 'bg-green-100 text-green-700'

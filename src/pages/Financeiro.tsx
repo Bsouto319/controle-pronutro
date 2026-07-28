@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useIsAdmin } from '../hooks/useIsAdmin'
-import type { Pagamento, Patient } from '../types'
+import type { Pagamento, Patient, Medicamento } from '../types'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import ImportPagamentosCSVModal from '../components/ImportPagamentosCSVModal'
@@ -40,8 +40,14 @@ export default function Financeiro() {
   const { isAdmin, loading: loadingAdmin } = useIsAdmin()
   const [pagamentos, setPagamentos] = useState<PagamentoComPaciente[]>([])
   const [patients, setPatients] = useState<Patient[]>([])
+  const [medicamentos, setMedicamentos] = useState<Medicamento[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [showEstoqueMed, setShowEstoqueMed] = useState(false)
+  const [novoMedNome, setNovoMedNome] = useState('')
+  const [novoMedEstoque, setNovoMedEstoque] = useState('')
+  const [savingMed, setSavingMed] = useState(false)
+  const [ajusteEstoque, setAjusteEstoque] = useState<Record<string, string>>({})
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'todos' | 'pago' | 'pendente' | 'cancelado'>('todos')
   const [dataInicio, setDataInicio] = useState('')
@@ -60,16 +66,20 @@ export default function Financeiro() {
     referente_a: 'consulta',
     status: 'pago' as 'pago' | 'pendente' | 'cancelado',
     observacoes: '',
+    medicamento_id: '',
+    quantidade_mg: '',
   })
 
   async function load() {
     setLoading(true)
-    const [{ data: pags }, { data: pts }] = await Promise.all([
+    const [{ data: pags }, { data: pts }, { data: meds }] = await Promise.all([
       supabase.from('pronutro_pagamentos').select('*').order('data_pagamento', { ascending: false }),
       supabase.from('pronutro_patients').select('*').order('nome'),
+      supabase.from('pronutro_medicamentos').select('*').order('nome'),
     ])
     const patientsList = pts ?? []
     setPatients(patientsList)
+    setMedicamentos(meds ?? [])
     setPagamentos(
       (pags ?? []).map((p) => ({
         ...p,
@@ -95,7 +105,13 @@ export default function Financeiro() {
 
   async function savePagamento() {
     if (!form.patient_id || !form.valor || !form.data_pagamento) return
+    if (form.medicamento_id && !form.quantidade_mg) {
+      alert('Informe quantos mg foram comprados dessa medicação.')
+      return
+    }
     setSaving(true)
+    const quantidadeMg = form.quantidade_mg ? Number(form.quantidade_mg.replace(',', '.')) : null
+
     const { error } = await supabase.from('pronutro_pagamentos').insert({
       patient_id: form.patient_id,
       valor: Number(form.valor.replace(',', '.')),
@@ -104,19 +120,81 @@ export default function Financeiro() {
       referente_a: form.referente_a,
       status: form.status,
       observacoes: form.observacoes || null,
+      medicamento_id: form.medicamento_id || null,
+      quantidade_mg: quantidadeMg,
     })
-    setSaving(false)
     if (error) {
+      setSaving(false)
       alert('Erro ao salvar pagamento: ' + error.message)
       console.error('savePagamento', error)
       return
     }
+
+    // Pagamento referente a medicação: entra no estoque do paciente e desconta do estoque geral
+    if (form.medicamento_id && quantidadeMg) {
+      const { error: purchaseError } = await supabase.from('pronutro_purchases').insert({
+        patient_id: form.patient_id,
+        data_compra: form.data_pagamento,
+        quantidade_mg: quantidadeMg,
+        medicamento_id: form.medicamento_id,
+        observacoes: 'Lançado automaticamente via Financeiro',
+      })
+      if (purchaseError) {
+        console.error('savePagamento (purchase)', purchaseError)
+        alert('Pagamento salvo, mas houve erro ao registrar a entrada no estoque do paciente: ' + purchaseError.message)
+      }
+      const { error: estoqueError } = await supabase.rpc('descontar_estoque_medicamento', {
+        p_medicamento_id: form.medicamento_id,
+        p_quantidade_mg: quantidadeMg,
+      })
+      if (estoqueError) {
+        console.error('savePagamento (estoque)', estoqueError)
+        alert('Pagamento salvo, mas houve erro ao descontar do estoque geral: ' + estoqueError.message)
+      }
+    }
+
+    setSaving(false)
     setForm({
       patient_id: '', valor: '', data_pagamento: format(new Date(), 'yyyy-MM-dd'),
       forma_pagamento: 'pix', referente_a: 'consulta', status: 'pago', observacoes: '',
+      medicamento_id: '', quantidade_mg: '',
     })
     setPatientSearch('')
     setShowForm(false)
+    load()
+  }
+
+  async function saveMedicamento() {
+    if (!novoMedNome.trim()) return
+    setSavingMed(true)
+    const { error } = await supabase.from('pronutro_medicamentos').insert({
+      nome: novoMedNome.trim(),
+      estoque_mg: novoMedEstoque ? Number(novoMedEstoque.replace(',', '.')) : 0,
+    })
+    setSavingMed(false)
+    if (error) {
+      alert('Erro ao cadastrar medicação: ' + error.message)
+      return
+    }
+    setNovoMedNome('')
+    setNovoMedEstoque('')
+    load()
+  }
+
+  async function ajustarEstoque(medId: string) {
+    const valor = ajusteEstoque[medId]
+    if (!valor) return
+    const delta = Number(valor.replace(',', '.'))
+    if (Number.isNaN(delta) || delta === 0) return
+    const { error } = await supabase.rpc('descontar_estoque_medicamento', {
+      p_medicamento_id: medId,
+      p_quantidade_mg: -delta,
+    })
+    if (error) {
+      alert('Erro ao ajustar estoque: ' + error.message)
+      return
+    }
+    setAjusteEstoque((a) => ({ ...a, [medId]: '' }))
     load()
   }
 
@@ -185,6 +263,9 @@ export default function Financeiro() {
           <button onClick={exportCSV} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors font-medium bg-white">
             ↓ <span className="hidden sm:inline">Exportar</span> CSV
           </button>
+          <button onClick={() => setShowEstoqueMed((v) => !v)} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors font-medium bg-white">
+            💊 <span className="hidden sm:inline">Estoque</span> Medicações
+          </button>
           <button
             onClick={() => setShowForm((v) => !v)}
             className="flex items-center gap-1.5 bg-brand text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-brand-dark transition-colors shadow-sm"
@@ -200,6 +281,57 @@ export default function Financeiro() {
           onClose={() => setShowImport(false)}
           onSuccess={() => { setShowImport(false); load() }}
         />
+      )}
+
+      {showEstoqueMed && (
+        <div className="bg-white rounded-2xl border-2 border-blue-300 p-5 shadow-md space-y-4">
+          <h2 className="text-sm font-bold text-gray-700">💊 Estoque de Medicações (clínica)</h2>
+          {medicamentos.length === 0 ? (
+            <p className="text-sm text-gray-400">Nenhuma medicação cadastrada ainda.</p>
+          ) : (
+            <div className="space-y-2">
+              {medicamentos.map((m) => (
+                <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 border border-gray-100 rounded-lg px-3 py-2 text-sm">
+                  <div>
+                    <span className="font-semibold text-gray-800">{m.nome}</span>
+                    <span className="text-gray-400 mx-1.5">·</span>
+                    <span className={m.estoque_mg <= 0 ? 'text-red-600 font-medium' : 'text-gray-600'}>{m.estoque_mg} mg em estoque</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      placeholder="+/- mg"
+                      value={ajusteEstoque[m.id] ?? ''}
+                      onChange={(e) => setAjusteEstoque((a) => ({ ...a, [m.id]: e.target.value }))}
+                      className="w-24 px-2 py-1 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-brand"
+                    />
+                    <button onClick={() => ajustarEstoque(m.id)} className="text-xs font-medium text-brand hover:underline">
+                      Ajustar
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="border-t border-gray-100 pt-3 flex flex-wrap items-end gap-2">
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Nova medicação</label>
+              <input type="text" placeholder="Ex: Semaglutida" value={novoMedNome}
+                onChange={(e) => setNovoMedNome(e.target.value)}
+                className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Estoque inicial (mg)</label>
+              <input type="text" placeholder="0" value={novoMedEstoque}
+                onChange={(e) => setNovoMedEstoque(e.target.value)}
+                className="w-28 px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+            </div>
+            <button onClick={saveMedicamento} disabled={savingMed || !novoMedNome.trim()}
+              className="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50">
+              {savingMed ? 'Salvando...' : '+ Cadastrar'}
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Stats */}
@@ -278,6 +410,23 @@ export default function Financeiro() {
                 {REFERENTES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
               </select>
             </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Medicação (opcional)</label>
+              <select value={form.medicamento_id} onChange={(e) => setForm((f) => ({ ...f, medicamento_id: e.target.value }))}
+                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                <option value="">Nenhuma</option>
+                {medicamentos.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
+              </select>
+            </div>
+            {form.medicamento_id && (
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Quantidade comprada (mg) *</label>
+                <input type="text" placeholder="Ex: 2,5" value={form.quantidade_mg}
+                  onChange={(e) => setForm((f) => ({ ...f, quantidade_mg: e.target.value }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+                <p className="text-[11px] text-gray-400 mt-1">Entra no estoque do paciente e desconta do estoque geral.</p>
+              </div>
+            )}
             <div>
               <label className="text-xs text-gray-500 block mb-1">Status</label>
               <select value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as typeof form.status }))}
