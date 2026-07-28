@@ -96,7 +96,7 @@ export default function Financeiro() {
   async function savePagamento() {
     if (!form.patient_id || !form.valor || !form.data_pagamento) return
     setSaving(true)
-    await supabase.from('pronutro_pagamentos').insert({
+    const { error } = await supabase.from('pronutro_pagamentos').insert({
       patient_id: form.patient_id,
       valor: Number(form.valor.replace(',', '.')),
       data_pagamento: form.data_pagamento,
@@ -105,24 +105,31 @@ export default function Financeiro() {
       status: form.status,
       observacoes: form.observacoes || null,
     })
+    setSaving(false)
+    if (error) {
+      alert('Erro ao salvar pagamento: ' + error.message)
+      console.error('savePagamento', error)
+      return
+    }
     setForm({
       patient_id: '', valor: '', data_pagamento: format(new Date(), 'yyyy-MM-dd'),
       forma_pagamento: 'pix', referente_a: 'consulta', status: 'pago', observacoes: '',
     })
     setPatientSearch('')
     setShowForm(false)
-    setSaving(false)
     load()
   }
 
   async function updateStatus(id: string, status: 'pago' | 'pendente' | 'cancelado') {
-    await supabase.from('pronutro_pagamentos').update({ status }).eq('id', id)
+    const { error } = await supabase.from('pronutro_pagamentos').update({ status }).eq('id', id)
+    if (error) { alert('Erro ao atualizar status: ' + error.message); return }
     setPagamentos((prev) => prev.map((p) => (p.id === id ? { ...p, status } : p)))
   }
 
   async function deletePagamento(id: string) {
     if (!confirm('Apagar este lançamento financeiro?')) return
-    await supabase.from('pronutro_pagamentos').delete().eq('id', id)
+    const { error } = await supabase.from('pronutro_pagamentos').delete().eq('id', id)
+    if (error) { alert('Erro ao apagar: ' + error.message); return }
     setPagamentos((prev) => prev.filter((p) => p.id !== id))
   }
 
