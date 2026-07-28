@@ -12,6 +12,7 @@ const FORMAS_PAGAMENTO: Record<string, string> = {
   pix: 'Pix', dinheiro: 'Dinheiro', cartao_credito: 'Cartão crédito', cartao_debito: 'Cartão débito',
   boleto: 'Boleto', transferencia: 'Transferência', b16: 'B16', pronutro: 'ProNutro',
 }
+const FORMAS_PAGAMENTO_OPTIONS = Object.entries(FORMAS_PAGAMENTO).map(([value, label]) => ({ value, label }))
 
 function fmtMoney(n: number) {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -44,7 +45,10 @@ export default function Paciente() {
   const [evolucao, setEvolucao] = useState<EvolucaoRecord[]>([])
   const [evolucaoForm, setEvolucaoForm] = useState<Record<number, { peso_kg: string; gordura_pct: string }>>({})
   const [activeSig, setActiveSig] = useState<number | null>(null)
-  const [purchaseForm, setPurchaseForm] = useState({ data_compra: '', quantidade_mg: '', lote: '', observacoes: '' })
+  const [purchaseForm, setPurchaseForm] = useState({
+    data_compra: '', quantidade_mg: '', lote: '', observacoes: '',
+    medicamento_id: '', valor_pago: '', forma_pagamento: 'pix',
+  })
   const [purchaseReceitaFile, setPurchaseReceitaFile] = useState<File | null>(null)
   const [numSemanas, setNumSemanas] = useState(8)
   const [uploadingPdf, setUploadingPdf] = useState<number | null>(null)
@@ -206,6 +210,10 @@ export default function Paciente() {
 
   async function savePurchase() {
     if (!purchaseForm.quantidade_mg || !purchaseForm.data_compra) return
+    if (purchaseForm.valor_pago && !purchaseForm.medicamento_id) {
+      alert('Selecione a medicação pra registrar o pagamento junto com a entrada.')
+      return
+    }
     setSavingPurchase(true)
     const { data: inserted, error } = await supabase.from('pronutro_purchases').insert({
       patient_id: id,
@@ -213,6 +221,7 @@ export default function Paciente() {
       quantidade_mg: Number(purchaseForm.quantidade_mg),
       lote: purchaseForm.lote || null,
       observacoes: purchaseForm.observacoes || null,
+      medicamento_id: purchaseForm.medicamento_id || null,
     }).select('*').single()
 
     if (!error && inserted && purchaseReceitaFile) {
@@ -229,7 +238,35 @@ export default function Paciente() {
       }
     }
 
-    setPurchaseForm({ data_compra: '', quantidade_mg: '', lote: '', observacoes: '' })
+    // Pagamento lançado junto (opcional) + desconta do estoque geral da clínica
+    if (!error && purchaseForm.valor_pago && purchaseForm.medicamento_id) {
+      const { error: pagError } = await supabase.from('pronutro_pagamentos').insert({
+        patient_id: id,
+        valor: Number(purchaseForm.valor_pago.replace(',', '.')),
+        data_pagamento: purchaseForm.data_compra,
+        forma_pagamento: purchaseForm.forma_pagamento,
+        referente_a: 'protocolo',
+        status: 'pago',
+        medicamento_id: purchaseForm.medicamento_id,
+        quantidade_mg: Number(purchaseForm.quantidade_mg),
+      })
+      if (pagError) {
+        alert('Entrada de estoque salva, mas houve erro ao lançar o pagamento: ' + pagError.message)
+      }
+      const { error: estoqueError } = await supabase.rpc('descontar_estoque_medicamento', {
+        p_medicamento_id: purchaseForm.medicamento_id,
+        p_quantidade_mg: Number(purchaseForm.quantidade_mg),
+      })
+      if (estoqueError) {
+        alert('Erro ao descontar do estoque geral: ' + estoqueError.message)
+      }
+      const { data: pagUpdated } = await supabase.from('pronutro_pagamentos').select('*').eq('patient_id', id).order('data_pagamento', { ascending: false })
+      setPagamentos(pagUpdated ?? [])
+      const { data: medUpdated } = await supabase.from('pronutro_medicamentos').select('*').order('nome')
+      setMedicamentos(medUpdated ?? [])
+    }
+
+    setPurchaseForm({ data_compra: '', quantidade_mg: '', lote: '', observacoes: '', medicamento_id: '', valor_pago: '', forma_pagamento: 'pix' })
     setPurchaseReceitaFile(null)
     if (purchaseReceitaInputRef.current) purchaseReceitaInputRef.current.value = ''
     const { data } = await supabase.from('pronutro_purchases').select('*').eq('patient_id', id).order('data_compra')
@@ -835,6 +872,14 @@ export default function Paciente() {
                   className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
               </div>
               <div>
+                <label className="text-xs text-gray-500 block mb-1">Medicação</label>
+                <select value={purchaseForm.medicamento_id} onChange={(e) => setPurchaseForm(f => ({ ...f, medicamento_id: e.target.value }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                  <option value="">Selecionar...</option>
+                  {medicamentos.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                </select>
+              </div>
+              <div>
                 <label className="text-xs text-gray-500 block mb-1">Quantidade (mg) *</label>
                 <input type="number" step="0.5" placeholder="Ex: 10" value={purchaseForm.quantidade_mg}
                   onChange={(e) => setPurchaseForm(f => ({ ...f, quantidade_mg: e.target.value }))}
@@ -846,6 +891,22 @@ export default function Paciente() {
                   onChange={(e) => setPurchaseForm(f => ({ ...f, lote: e.target.value }))}
                   className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
               </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Valor pago (R$)</label>
+                <input type="text" placeholder="Ex: 350,00" value={purchaseForm.valor_pago}
+                  onChange={(e) => setPurchaseForm(f => ({ ...f, valor_pago: e.target.value }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+                <p className="text-[11px] text-gray-400 mt-1">Opcional — lança o pagamento junto (Financeiro).</p>
+              </div>
+              {purchaseForm.valor_pago && (
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Forma de pagamento</label>
+                  <select value={purchaseForm.forma_pagamento} onChange={(e) => setPurchaseForm(f => ({ ...f, forma_pagamento: e.target.value }))}
+                    className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                    {FORMAS_PAGAMENTO_OPTIONS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="text-xs text-gray-500 block mb-1">Obs</label>
                 <input type="text" placeholder="Farmácia, recompra..." value={purchaseForm.observacoes}
