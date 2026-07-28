@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import type { Patient, Contract, DoseRecord, Purchase } from '../types'
 import { format } from 'date-fns'
@@ -11,6 +11,13 @@ interface PatientWithContract extends Patient {
   contract?: Contract
   doses: DoseRecord[]
   saldo: number
+  proximoRetorno: string | null
+}
+
+function calcProximoRetorno(doses: DoseRecord[], cicloAtual: number): string | null {
+  const aplicadasNoCiclo = doses.filter((d) => d.ciclo === cicloAtual && d.data_aplicacao)
+  const ultima = [...aplicadasNoCiclo].sort((a, b) => b.semana - a.semana)[0]
+  return ultima?.proxima_data_aplicacao ?? null
 }
 
 function waLink(telefone: string) {
@@ -27,14 +34,15 @@ const statusBadge = (status?: string) => {
   return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-200">✕ Expirado</span>
 }
 
-type FilterTab = 'ativos' | 'inativos' | 'negativos' | 'todos'
+type FilterTab = 'ativos' | 'inativos' | 'negativos' | 'todos' | 'retorno'
 
 export default function Admin() {
+  const navigate = useNavigate()
   const [patients, setPatients] = useState<PatientWithContract[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filterDate, setFilterDate] = useState('')
-  const [tab, setTab] = useState<FilterTab>('ativos')
+  const [tab, setTab] = useState<FilterTab>('retorno')
   const [showImport, setShowImport] = useState(false)
 
   useEffect(() => {
@@ -69,6 +77,7 @@ export default function Admin() {
             contract: contracts?.find((c) => c.patient_id === p.id),
             doses: patientDoses,
             saldo: Math.round((comprado - aplicado) * 100) / 100,
+            proximoRetorno: calcProximoRetorno(patientDoses, p.ciclo_atual ?? 1),
           }
         })
         setPatients(merged)
@@ -109,8 +118,9 @@ export default function Admin() {
   const ativos = patients.filter((p) => p.ativo !== false)
   const inativos = patients.filter((p) => p.ativo === false)
   const negativos = ativos.filter((p) => p.saldo <= 0)
+  const comRetorno = ativos.filter((p) => p.proximoRetorno)
 
-  const byTab = tab === 'ativos' ? ativos : tab === 'inativos' ? inativos : tab === 'negativos' ? negativos : patients
+  const byTab = tab === 'ativos' ? ativos : tab === 'inativos' ? inativos : tab === 'negativos' ? negativos : tab === 'retorno' ? comRetorno : patients
 
   const filtered = byTab
     .filter(
@@ -120,6 +130,7 @@ export default function Admin() {
     )
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }))
 
+  const todayStr = new Date().toISOString().slice(0, 10)
   const totalSigned = ativos.filter((p) => p.contract?.status === 'signed').length
   const totalPending = ativos.filter((p) => !p.contract || p.contract.status === 'pending').length
 
@@ -140,6 +151,7 @@ export default function Admin() {
         contract: contracts?.find((c) => c.patient_id === p.id),
         doses: patientDoses,
         saldo: Math.round((comprado - aplicado) * 100) / 100,
+        proximoRetorno: calcProximoRetorno(patientDoses, p.ciclo_atual ?? 1),
       }
     }))
     setLoading(false)
@@ -167,7 +179,7 @@ export default function Admin() {
 
       {/* Abas */}
       <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-xl w-fit">
-        {([['ativos', `Ativos (${ativos.length})`, 'text-green-700'], ['inativos', `Inativos (${inativos.length})`, 'text-gray-500'], ['negativos', `⚠ Saldo negativo (${negativos.length})`, 'text-red-600'], ['todos', 'Todos', 'text-gray-600']] as const).map(([key, label, _]) => (
+        {([['retorno', `📅 Retorno (${comRetorno.length})`, 'text-blue-600'], ['ativos', `Ativos (${ativos.length})`, 'text-green-700'], ['inativos', `Inativos (${inativos.length})`, 'text-gray-500'], ['negativos', `⚠ Saldo negativo (${negativos.length})`, 'text-red-600'], ['todos', 'Todos', 'text-gray-600']] as const).map(([key, label, _]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
@@ -279,6 +291,15 @@ export default function Admin() {
                       ⚠ Saldo {p.saldo} mg
                     </span>
                   )}
+                  {p.proximoRetorno && (
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium border ${
+                      p.proximoRetorno < todayStr ? 'bg-red-50 text-red-600 border-red-200'
+                      : p.proximoRetorno === todayStr ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      : 'bg-blue-50 text-blue-600 border-blue-200'
+                    }`}>
+                      📅 {format(new Date(p.proximoRetorno + 'T12:00:00'), 'dd/MM/yy', { locale: ptBR })}
+                    </span>
+                  )}
                   <span className="text-xs text-gray-300 ml-auto">
                     {format(new Date(p.created_at), 'dd/MM/yy', { locale: ptBR })}
                   </span>
@@ -296,15 +317,16 @@ export default function Admin() {
                   <th className="text-left px-5 py-3 font-semibold text-sm">Médico</th>
                   <th className="text-left px-5 py-3 font-semibold text-sm">Contrato</th>
                   <th className="text-left px-5 py-3 font-semibold text-sm">Saldo</th>
+                  <th className="text-left px-5 py-3 font-semibold text-sm">Próximo Retorno</th>
                   <th className="text-left px-5 py-3 font-semibold text-sm">Cadastro</th>
-                  <th className="px-5 py-3"/>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.map((p) => (
                   <tr
                     key={p.id}
-                    className={`transition-colors group ${p.ativo === false ? 'opacity-50' : 'hover:bg-green-50/40'}`}
+                    onClick={() => navigate(`/paciente/${p.id}`)}
+                    className={`transition-colors group cursor-pointer ${p.ativo === false ? 'opacity-50' : 'hover:bg-green-50/40'}`}
                   >
                     <td className="px-5 py-3.5 font-medium text-gray-800">
                       <div className="flex items-center gap-2">
@@ -331,16 +353,20 @@ export default function Admin() {
                         </a>
                       )}
                     </td>
+                    <td className="px-5 py-3.5">
+                      {p.proximoRetorno ? (
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${
+                          p.proximoRetorno < todayStr ? 'bg-red-50 text-red-600 border-red-200'
+                          : p.proximoRetorno === todayStr ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : 'bg-blue-50 text-blue-600 border-blue-200'
+                        }`}>
+                          {p.proximoRetorno < todayStr ? '⚠ ' : p.proximoRetorno === todayStr ? '📍 ' : ''}
+                          {format(new Date(p.proximoRetorno + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}
+                        </span>
+                      ) : <span className="text-gray-300 text-xs">—</span>}
+                    </td>
                     <td className="px-5 py-3.5 text-gray-400 text-xs">
                       {format(new Date(p.created_at), 'dd/MM/yyyy', { locale: ptBR })}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <Link
-                        to={`/paciente/${p.id}`}
-                        className="text-brand font-semibold text-sm hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        Ver →
-                      </Link>
                     </td>
                   </tr>
                 ))}
