@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useIsAdmin } from '../hooks/useIsAdmin'
 import type { Pagamento, Patient } from '../types'
@@ -36,6 +36,7 @@ function fmtMoney(n: number) {
 }
 
 export default function Financeiro() {
+  const [searchParams] = useSearchParams()
   const { isAdmin, loading: loadingAdmin } = useIsAdmin()
   const [pagamentos, setPagamentos] = useState<PagamentoComPaciente[]>([])
   const [patients, setPatients] = useState<Patient[]>([])
@@ -79,6 +80,18 @@ export default function Financeiro() {
   }
 
   useEffect(() => { load() }, [])
+
+  useEffect(() => {
+    const pacienteId = searchParams.get('paciente')
+    if (!pacienteId || patients.length === 0) return
+    const p = patients.find((pt) => pt.id === pacienteId)
+    if (!p) return
+    setForm((f) => ({ ...f, patient_id: p.id }))
+    setPatientSearch(p.nome)
+    setShowForm(true)
+    setTimeout(() => document.getElementById('form-novo-pagamento')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patients, searchParams])
 
   async function savePagamento() {
     if (!form.patient_id || !form.valor || !form.data_pagamento) return

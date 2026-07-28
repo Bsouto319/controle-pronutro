@@ -4,9 +4,18 @@ import { supabase } from '../lib/supabase'
 import SignaturePad, { type SignaturePadHandle } from '../components/SignaturePad'
 import EvolucaoChart from '../components/EvolucaoChart'
 import { useIsAdmin } from '../hooks/useIsAdmin'
-import type { Patient, Contract, DoseRecord, Purchase, EvolucaoRecord, Bioimpedancia } from '../types'
+import type { Patient, Contract, DoseRecord, Purchase, EvolucaoRecord, Bioimpedancia, Pagamento } from '../types'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+
+const FORMAS_PAGAMENTO: Record<string, string> = {
+  pix: 'Pix', dinheiro: 'Dinheiro', cartao_credito: 'Cartão crédito', cartao_debito: 'Cartão débito',
+  boleto: 'Boleto', transferencia: 'Transferência', b16: 'B16', pronutro: 'ProNutro',
+}
+
+function fmtMoney(n: number) {
+  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
 
 const statusBadge = (status?: string) => {
   if (!status || status === 'pending')
@@ -43,6 +52,7 @@ export default function Paciente() {
   const [expandedCiclos, setExpandedCiclos] = useState<Record<number, boolean>>({})
   const [showPatientInfo, setShowPatientInfo] = useState(false)
   const [bioimpedancias, setBioimpedancias] = useState<Bioimpedancia[]>([])
+  const [pagamentos, setPagamentos] = useState<Pagamento[]>([])
   const [bioForm, setBioForm] = useState({ data_exame: '', observacoes: '' })
   const [bioFile, setBioFile] = useState<File | null>(null)
   const [savingBio, setSavingBio] = useState(false)
@@ -59,13 +69,14 @@ export default function Paciente() {
   const bioFileInputRef = useRef<HTMLInputElement>(null)
 
   async function loadData() {
-    const [{ data: p }, { data: c }, { data: d }, { data: pur }, { data: ev }, { data: bio }] = await Promise.all([
+    const [{ data: p }, { data: c }, { data: d }, { data: pur }, { data: ev }, { data: bio }, { data: pag }] = await Promise.all([
       supabase.from('pronutro_patients').select('*').eq('id', id).single(),
       supabase.from('pronutro_contracts').select('*').eq('patient_id', id).single(),
       supabase.from('pronutro_dose_records').select('*').eq('patient_id', id).order('semana'),
       supabase.from('pronutro_purchases').select('*').eq('patient_id', id).order('data_compra'),
       supabase.from('pronutro_evolucao').select('*').eq('patient_id', id).order('semana'),
       supabase.from('pronutro_bioimpedancia').select('*').eq('patient_id', id).order('data_exame', { ascending: false }),
+      supabase.from('pronutro_pagamentos').select('*').eq('patient_id', id).order('data_pagamento', { ascending: false }),
     ])
     setPatient(p)
     setContract(c)
@@ -73,6 +84,7 @@ export default function Paciente() {
     setPurchases(pur ?? [])
     setEvolucao(ev ?? [])
     setBioimpedancias(bio ?? [])
+    setPagamentos(pag ?? [])
 
     // Só a semana/formulário do ciclo em andamento — ciclos anteriores ficam só no histórico
     const cicloAtual = p?.ciclo_atual ?? 1
@@ -943,6 +955,45 @@ export default function Paciente() {
           </button>
         </div>
       </div>
+
+      {/* Financeiro */}
+      {isAdmin && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-bold text-gray-800">Financeiro</h2>
+            <Link to={`/financeiro?paciente=${id}`} className="text-xs text-brand hover:underline font-medium">
+              + Lançar pagamento
+            </Link>
+          </div>
+          {pagamentos.length === 0 ? (
+            <p className="text-sm text-gray-400">Nenhum pagamento lançado ainda.</p>
+          ) : (
+            <div className="space-y-2">
+              {pagamentos.map((p) => (
+                <div key={p.id} className="flex items-center justify-between gap-3 border border-gray-100 rounded-lg px-3 py-2 text-sm">
+                  <div>
+                    <span className="font-semibold text-gray-800">{fmtMoney(Number(p.valor))}</span>
+                    <span className="text-gray-400 mx-1.5">·</span>
+                    <span className="text-gray-500">{format(new Date(p.data_pagamento + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}</span>
+                    <span className="text-gray-400 mx-1.5">·</span>
+                    <span className="text-gray-500">{FORMAS_PAGAMENTO[p.forma_pagamento] ?? p.forma_pagamento}</span>
+                  </div>
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                    p.status === 'pago' ? 'bg-green-100 text-green-700'
+                    : p.status === 'pendente' ? 'bg-amber-100 text-amber-700'
+                    : 'bg-red-100 text-red-700'
+                  }`}>
+                    {p.status === 'pago' ? '✓ Pago' : p.status === 'pendente' ? '⏳ Pendente' : '✕ Cancelado'}
+                  </span>
+                </div>
+              ))}
+              <p className="text-xs text-gray-400 pt-1">
+                Total pago: <strong className="text-green-600">{fmtMoney(pagamentos.filter(p => p.status === 'pago').reduce((a, p) => a + Number(p.valor), 0))}</strong>
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Contrato */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
