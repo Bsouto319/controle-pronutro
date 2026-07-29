@@ -238,7 +238,8 @@ export default function Paciente() {
       }
     }
 
-    // Pagamento lançado junto (opcional) + desconta do estoque geral da clínica
+    // Pagamento lançado junto (opcional). Estoque geral da clínica NÃO desconta
+    // aqui — só quando a dose for de fato aplicada (ver saveDose).
     if (!error && purchaseForm.valor_pago && purchaseForm.medicamento_id) {
       const { error: pagError } = await supabase.from('pronutro_pagamentos').insert({
         patient_id: id,
@@ -251,17 +252,7 @@ export default function Paciente() {
         quantidade_mg: Number(purchaseForm.quantidade_mg),
       })
       if (pagError) {
-        alert('Entrada de estoque salva, mas o pagamento NÃO foi lançado (estoque geral não foi descontado): ' + pagError.message)
-      } else {
-        const { error: estoqueError } = await supabase.rpc('descontar_estoque_medicamento', {
-          p_medicamento_id: purchaseForm.medicamento_id,
-          p_quantidade_mg: Number(purchaseForm.quantidade_mg),
-        })
-        if (estoqueError) {
-          alert('Pagamento salvo, mas houve erro ao descontar do estoque geral: ' + estoqueError.message)
-        }
-        const { data: medUpdated } = await supabase.from('pronutro_medicamentos').select('*').order('nome')
-        setMedicamentos(medUpdated ?? [])
+        alert('Entrada de estoque salva, mas o pagamento NÃO foi lançado: ' + pagError.message)
       }
       const { data: pagUpdated } = await supabase.from('pronutro_pagamentos').select('*').eq('patient_id', id).order('data_pagamento', { ascending: false })
       setPagamentos(pagUpdated ?? [])
@@ -385,6 +376,22 @@ export default function Paciente() {
       await supabase.from('pronutro_dose_records').update(payload).eq('id', existing.id)
     } else {
       await supabase.from('pronutro_dose_records').insert(payload)
+    }
+
+    // Estoque geral da clínica desconta só quando a dose é REALMENTE aplicada
+    // (não no pagamento) — evita descontar 2x (uma no pagamento, outra na aplicação)
+    // e evita descontar antes da hora (paciente pagou mas ainda não veio tomar).
+    const jaEstavaAplicada = !!existing?.data_aplicacao
+    if (!jaEstavaAplicada && payload.data_aplicacao && payload.dose_mg) {
+      const medIdDaCompra = purchases.find((p) => p.medicamento_id)?.medicamento_id
+      if (medIdDaCompra) {
+        await supabase.rpc('descontar_estoque_medicamento', {
+          p_medicamento_id: medIdDaCompra,
+          p_quantidade_mg: Number(payload.dose_mg),
+        })
+        const { data: medUpdated } = await supabase.from('pronutro_medicamentos').select('*').order('nome')
+        setMedicamentos(medUpdated ?? [])
+      }
     }
 
     const evo = evolucaoForm[semana]

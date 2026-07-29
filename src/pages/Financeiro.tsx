@@ -130,7 +130,10 @@ export default function Financeiro() {
       return
     }
 
-    // Pagamento referente a medicação: entra no estoque do paciente e desconta do estoque geral
+    // Pagamento referente a medicação: entra no estoque do paciente (comprado).
+    // NÃO desconta o estoque geral aqui — isso só acontece quando a dose é
+    // de fato aplicada (ver saveDose em Paciente.tsx), pra não descontar 2x
+    // nem descontar antes do paciente vir de verdade tomar a dose.
     if (form.medicamento_id && quantidadeMg) {
       const { error: purchaseError } = await supabase.from('pronutro_purchases').insert({
         patient_id: form.patient_id,
@@ -142,14 +145,6 @@ export default function Financeiro() {
       if (purchaseError) {
         console.error('savePagamento (purchase)', purchaseError)
         alert('Pagamento salvo, mas houve erro ao registrar a entrada no estoque do paciente: ' + purchaseError.message)
-      }
-      const { error: estoqueError } = await supabase.rpc('descontar_estoque_medicamento', {
-        p_medicamento_id: form.medicamento_id,
-        p_quantidade_mg: quantidadeMg,
-      })
-      if (estoqueError) {
-        console.error('savePagamento (estoque)', estoqueError)
-        alert('Pagamento salvo, mas houve erro ao descontar do estoque geral: ' + estoqueError.message)
       }
     }
 
@@ -424,7 +419,7 @@ export default function Financeiro() {
                 <input type="text" placeholder="Ex: 2,5" value={form.quantidade_mg}
                   onChange={(e) => setForm((f) => ({ ...f, quantidade_mg: e.target.value }))}
                   className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
-                <p className="text-[11px] text-gray-400 mt-1">Entra no estoque do paciente e desconta do estoque geral.</p>
+                <p className="text-[11px] text-gray-400 mt-1">Entra no estoque do paciente. O estoque geral só desconta quando a dose for aplicada.</p>
               </div>
             )}
             <div>
