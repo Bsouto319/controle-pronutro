@@ -251,19 +251,20 @@ export default function Paciente() {
         quantidade_mg: Number(purchaseForm.quantidade_mg),
       })
       if (pagError) {
-        alert('Entrada de estoque salva, mas houve erro ao lançar o pagamento: ' + pagError.message)
-      }
-      const { error: estoqueError } = await supabase.rpc('descontar_estoque_medicamento', {
-        p_medicamento_id: purchaseForm.medicamento_id,
-        p_quantidade_mg: Number(purchaseForm.quantidade_mg),
-      })
-      if (estoqueError) {
-        alert('Erro ao descontar do estoque geral: ' + estoqueError.message)
+        alert('Entrada de estoque salva, mas o pagamento NÃO foi lançado (estoque geral não foi descontado): ' + pagError.message)
+      } else {
+        const { error: estoqueError } = await supabase.rpc('descontar_estoque_medicamento', {
+          p_medicamento_id: purchaseForm.medicamento_id,
+          p_quantidade_mg: Number(purchaseForm.quantidade_mg),
+        })
+        if (estoqueError) {
+          alert('Pagamento salvo, mas houve erro ao descontar do estoque geral: ' + estoqueError.message)
+        }
+        const { data: medUpdated } = await supabase.from('pronutro_medicamentos').select('*').order('nome')
+        setMedicamentos(medUpdated ?? [])
       }
       const { data: pagUpdated } = await supabase.from('pronutro_pagamentos').select('*').eq('patient_id', id).order('data_pagamento', { ascending: false })
       setPagamentos(pagUpdated ?? [])
-      const { data: medUpdated } = await supabase.from('pronutro_medicamentos').select('*').order('nome')
-      setMedicamentos(medUpdated ?? [])
     }
 
     setPurchaseForm({ data_compra: '', quantidade_mg: '', lote: '', observacoes: '', medicamento_id: '', valor_pago: '', forma_pagamento: 'pix' })
