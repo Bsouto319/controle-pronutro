@@ -55,31 +55,33 @@ Deno.serve(async () => {
 
     const toRemind = Array.from(byPatient.values())
 
-    const results = await Promise.allSettled(
-      toRemind.map(async (s) => {
-        const p = s.gisele_patients as { nome: string; telefone: string }
-        const phone = formatPhone(p.telefone)
-        const dataFormatada = new Date(s.data_retorno + 'T12:00:00').toLocaleDateString('pt-BR')
+    // Envio sequencial com espaçamento — evita rajada de mensagens (gatilho
+    // de bloqueio automático em API não-oficial de WhatsApp).
+    const results: { patient: string; phone: string; ok: boolean; status: number }[] = []
+    for (const s of toRemind) {
+      const p = s.gisele_patients as { nome: string; telefone: string }
+      const phone = formatPhone(p.telefone)
+      const dataFormatada = new Date(s.data_retorno + 'T12:00:00').toLocaleDateString('pt-BR')
 
-        const msg = [
-          `Ola, *${p.nome}*!`,
-          ``,
-          `Passando pra lembrar: seu proximo retorno no Passaporte de Tratamento esta marcado para *${dataFormatada}* (daqui a ${alvo.label}).`,
-          ``,
-          `Confirme sua presenca ou entre em contato com a clinica.`,
-          ``,
-          `_Dra. Gisele Falcao_`,
-        ].join('\n')
+      const msg = [
+        `Ola, *${p.nome}*!`,
+        ``,
+        `Passando pra lembrar: seu proximo retorno no Passaporte de Tratamento esta marcado para *${dataFormatada}* (daqui a ${alvo.label}).`,
+        ``,
+        `Confirme sua presenca ou entre em contato com a clinica.`,
+        ``,
+        `_Dra. Gisele Falcao_`,
+      ].join('\n')
 
-        const res = await fetch(`${UAZAPI_URL}/send/text`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'token': UAZAPI_TOKEN },
-          body: JSON.stringify({ number: phone, text: msg }),
-        })
-
-        return { patient: p.nome, phone, ok: res.ok, status: res.status }
+      const res = await fetch(`${UAZAPI_URL}/send/text`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'token': UAZAPI_TOKEN },
+        body: JSON.stringify({ number: phone, text: msg }),
       })
-    )
+
+      results.push({ patient: p.nome, phone, ok: res.ok, status: res.status })
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+    }
 
     resumo[alvo.label] = {
       date: dateStr,

@@ -39,32 +39,34 @@ Deno.serve(async () => {
 
   const toRemind = Array.from(byPatient.values())
 
-  const results = await Promise.allSettled(
-    toRemind.map(async (r) => {
-      const p = r.pronutro_patients as { nome: string; telefone: string }
-      const phone = formatPhone(p.telefone)
-      const dataFormatada = new Date(r.proxima_data_aplicacao + 'T12:00:00').toLocaleDateString('pt-BR')
-      const doseStr = r.proxima_dose_mg ? `${r.proxima_dose_mg}mg` : ''
+  // Envio sequencial com espaçamento — rajada de mensagens no mesmo segundo
+  // é o principal gatilho de bloqueio automático em API não-oficial de WhatsApp.
+  const results: { patient: string; phone: string; ok: boolean; status: number }[] = []
+  for (const r of toRemind) {
+    const p = r.pronutro_patients as { nome: string; telefone: string }
+    const phone = formatPhone(p.telefone)
+    const dataFormatada = new Date(r.proxima_data_aplicacao + 'T12:00:00').toLocaleDateString('pt-BR')
+    const doseStr = r.proxima_dose_mg ? `${r.proxima_dose_mg}mg` : ''
 
-      const msg = [
-        `Ola, *${p.nome}*!`,
-        ``,
-        `Sua proxima aplicacao${doseStr ? ` de *${doseStr}*` : ''} esta marcada para *${dataFormatada}*.`,
-        ``,
-        `Confirme sua presenca ou entre em contato com a clinica.`,
-        ``,
-        `_ProNutro - Nutrologia e Terapias Integrativas_`,
-      ].join('\n')
+    const msg = [
+      `Ola, *${p.nome}*!`,
+      ``,
+      `Sua proxima aplicacao${doseStr ? ` de *${doseStr}*` : ''} esta marcada para *${dataFormatada}*.`,
+      ``,
+      `Confirme sua presenca ou entre em contato com a clinica.`,
+      ``,
+      `_ProNutro - Nutrologia e Terapias Integrativas_`,
+    ].join('\n')
 
-      const res = await fetch(`${UAZAPI_URL}/send/text`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'token': UAZAPI_TOKEN },
-        body: JSON.stringify({ number: phone, text: msg }),
-      })
-
-      return { patient: p.nome, phone, ok: res.ok, status: res.status }
+    const res = await fetch(`${UAZAPI_URL}/send/text`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'token': UAZAPI_TOKEN },
+      body: JSON.stringify({ number: phone, text: msg }),
     })
-  )
+
+    results.push({ patient: p.nome, phone, ok: res.ok, status: res.status })
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+  }
 
   return new Response(
     JSON.stringify({ date: dateStr, total: toRemind.length, results: results.map(r => r.status === 'fulfilled' ? r.value : { error: String(r.reason) }) }),
