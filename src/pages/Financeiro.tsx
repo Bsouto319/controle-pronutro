@@ -3,8 +3,9 @@ import { Navigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useIsAdmin } from '../hooks/useIsAdmin'
 import type { Pagamento, Patient, Medicamento } from '../types'
-import { format } from 'date-fns'
+import { format, subMonths } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import ImportPagamentosCSVModal from '../components/ImportPagamentosCSVModal'
 import { normalizeText } from '../lib/normalize'
 
@@ -46,8 +47,10 @@ export default function Financeiro() {
   const [showEstoqueMed, setShowEstoqueMed] = useState(false)
   const [novoMedNome, setNovoMedNome] = useState('')
   const [novoMedEstoque, setNovoMedEstoque] = useState('')
+  const [novoMedCusto, setNovoMedCusto] = useState('')
   const [savingMed, setSavingMed] = useState(false)
   const [ajusteEstoque, setAjusteEstoque] = useState<Record<string, string>>({})
+  const [editandoCusto, setEditandoCusto] = useState<Record<string, string>>({})
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'todos' | 'pago' | 'pendente' | 'cancelado'>('todos')
   const [dataInicio, setDataInicio] = useState('')
@@ -165,6 +168,7 @@ export default function Financeiro() {
     const { error } = await supabase.from('pronutro_medicamentos').insert({
       nome: novoMedNome.trim(),
       estoque_mg: novoMedEstoque ? Number(novoMedEstoque.replace(',', '.')) : 0,
+      custo_mg: novoMedCusto ? Number(novoMedCusto.replace(',', '.')) : null,
     })
     setSavingMed(false)
     if (error) {
@@ -173,6 +177,20 @@ export default function Financeiro() {
     }
     setNovoMedNome('')
     setNovoMedEstoque('')
+    setNovoMedCusto('')
+    load()
+  }
+
+  async function salvarCusto(medId: string) {
+    const valor = editandoCusto[medId]
+    if (valor === undefined) return
+    const custo = valor.trim() === '' ? null : Number(valor.replace(',', '.'))
+    const { error } = await supabase.from('pronutro_medicamentos').update({ custo_mg: custo }).eq('id', medId)
+    if (error) {
+      alert('Erro ao salvar custo: ' + error.message)
+      return
+    }
+    setEditandoCusto((c) => { const next = { ...c }; delete next[medId]; return next })
     load()
   }
 
@@ -240,6 +258,30 @@ export default function Financeiro() {
   const totalPago = filtered.filter((p) => p.status === 'pago').reduce((acc, p) => acc + Number(p.valor), 0)
   const totalPendente = filtered.filter((p) => p.status === 'pendente').reduce((acc, p) => acc + Number(p.valor), 0)
 
+  const pagos = pagamentos.filter((p) => p.status === 'pago')
+
+  const receitaMensal = Array.from({ length: 6 }, (_, i) => {
+    const d = subMonths(new Date(), 5 - i)
+    const chave = format(d, 'yyyy-MM')
+    const total = pagos
+      .filter((p) => p.data_pagamento.startsWith(chave))
+      .reduce((acc, p) => acc + Number(p.valor), 0)
+    return { mes: format(d, 'MMM/yy', { locale: ptBR }), receita: Math.round(total * 100) / 100 }
+  })
+
+  const margemPorMedicacao = medicamentos
+    .map((m) => {
+      const pagosDaMed = pagos.filter((p) => p.medicamento_id === m.id)
+      const receita = pagosDaMed.reduce((acc, p) => acc + Number(p.valor), 0)
+      const mgVendido = pagosDaMed.reduce((acc, p) => acc + Number(p.quantidade_mg ?? 0), 0)
+      const custo = m.custo_mg != null ? mgVendido * m.custo_mg : null
+      const margem = custo != null ? receita - custo : null
+      const margemPct = margem != null && receita > 0 ? (margem / receita) * 100 : null
+      return { nome: m.nome, receita, mgVendido, custo, margem, margemPct }
+    })
+    .filter((m) => m.receita > 0 || m.mgVendido > 0)
+    .sort((a, b) => b.receita - a.receita)
+
   if (loadingAdmin) return <div className="py-12 text-center text-gray-400">Carregando...</div>
   if (!isAdmin) return <Navigate to="/" replace />
   if (loading) return <div className="py-12 text-center text-gray-400">Carregando...</div>
@@ -291,6 +333,8 @@ export default function Financeiro() {
                     <span className="font-semibold text-gray-800">{m.nome}</span>
                     <span className="text-gray-400 mx-1.5">·</span>
                     <span className={m.estoque_mg <= 0 ? 'text-red-600 font-medium' : 'text-gray-600'}>{m.estoque_mg} mg em estoque</span>
+                    <span className="text-gray-400 mx-1.5">·</span>
+                    <span className="text-gray-500">{m.custo_mg != null ? `custo ${fmtMoney(m.custo_mg)}/mg` : 'sem custo definido'}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <input
@@ -302,6 +346,16 @@ export default function Financeiro() {
                     />
                     <button onClick={() => ajustarEstoque(m.id)} className="text-xs font-medium text-brand hover:underline">
                       Ajustar
+                    </button>
+                    <input
+                      type="text"
+                      placeholder="custo R$/mg"
+                      value={editandoCusto[m.id] ?? (m.custo_mg != null ? String(m.custo_mg) : '')}
+                      onChange={(e) => setEditandoCusto((c) => ({ ...c, [m.id]: e.target.value }))}
+                      className="w-24 px-2 py-1 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-brand"
+                    />
+                    <button onClick={() => salvarCusto(m.id)} className="text-xs font-medium text-brand hover:underline">
+                      Salvar custo
                     </button>
                   </div>
                 </div>
@@ -319,6 +373,12 @@ export default function Financeiro() {
               <label className="text-xs text-gray-500 block mb-1">Estoque inicial (mg)</label>
               <input type="text" placeholder="0" value={novoMedEstoque}
                 onChange={(e) => setNovoMedEstoque(e.target.value)}
+                className="w-28 px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Custo (R$/mg)</label>
+              <input type="text" placeholder="Opcional" value={novoMedCusto}
+                onChange={(e) => setNovoMedCusto(e.target.value)}
                 className="w-28 px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
             </div>
             <button onClick={saveMedicamento} disabled={savingMed || !novoMedNome.trim()}
@@ -339,6 +399,60 @@ export default function Financeiro() {
           <div className="text-xl sm:text-2xl font-bold text-amber-600">{fmtMoney(totalPendente)}</div>
           <div className="text-xs text-amber-600 mt-0.5">Pendente (filtro atual)</div>
         </div>
+      </div>
+
+      {/* Visão geral: tendência de receita + margem por medicação */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-6">
+        <div>
+          <h2 className="font-bold text-gray-800 mb-1">Receita mensal (pago)</h2>
+          <p className="text-xs text-gray-400 mb-3">Últimos 6 meses, independente dos filtros acima.</p>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={receitaMensal} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+              <XAxis dataKey="mes" tick={{ fontSize: 12, fill: '#9ca3af' }} />
+              <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} tickFormatter={(v) => `${v / 1000}k`} />
+              <Tooltip formatter={(v) => fmtMoney(Number(v))} />
+              <Bar dataKey="receita" fill="#1a6b3c" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {margemPorMedicacao.length > 0 && (
+          <div>
+            <h2 className="font-bold text-gray-800 mb-1">Margem por medicação</h2>
+            <p className="text-xs text-gray-400 mb-3">Custo calculado só pras medicações com custo/mg cadastrado (aba Estoque Medicações).</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-gray-400 text-xs border-b border-gray-100">
+                    <th className="py-2 pr-4 font-medium">Medicação</th>
+                    <th className="py-2 pr-4 font-medium">Mg vendido</th>
+                    <th className="py-2 pr-4 font-medium">Receita</th>
+                    <th className="py-2 pr-4 font-medium">Custo</th>
+                    <th className="py-2 pr-4 font-medium">Margem</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {margemPorMedicacao.map((m) => (
+                    <tr key={m.nome}>
+                      <td className="py-2 pr-4 font-medium text-gray-800">{m.nome}</td>
+                      <td className="py-2 pr-4 text-gray-600">{m.mgVendido} mg</td>
+                      <td className="py-2 pr-4 text-gray-700">{fmtMoney(m.receita)}</td>
+                      <td className="py-2 pr-4 text-gray-500">{m.custo != null ? fmtMoney(m.custo) : '—'}</td>
+                      <td className="py-2 pr-4 font-semibold">
+                        {m.margem != null ? (
+                          <span className={m.margem >= 0 ? 'text-green-700' : 'text-red-600'}>
+                            {fmtMoney(m.margem)} {m.margemPct != null && `(${m.margemPct.toFixed(0)}%)`}
+                          </span>
+                        ) : <span className="text-gray-300">—</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Form novo pagamento */}

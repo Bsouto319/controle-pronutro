@@ -62,6 +62,7 @@ export interface Medicamento {
   ativo: boolean
   created_at: string
   updated_at: string
+  custo_mg: number | null
 }
 
 export interface Bioimpedancia {
