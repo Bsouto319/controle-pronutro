@@ -22,7 +22,7 @@ Deno.serve(async () => {
 
   const { data: records, error } = await supabase
     .from('pronutro_dose_records')
-    .select('patient_id, proxima_dose_mg, semana, proxima_data_aplicacao, pronutro_patients!inner(nome, telefone, ativo)')
+    .select('id, patient_id, proxima_dose_mg, semana, proxima_data_aplicacao, pronutro_patients!inner(nome, telefone, ativo)')
     .eq('proxima_data_aplicacao', dateStr)
 
   if (error) {
@@ -48,28 +48,40 @@ Deno.serve(async () => {
     const dataFormatada = new Date(r.proxima_data_aplicacao + 'T12:00:00').toLocaleDateString('pt-BR')
     const doseStr = r.proxima_dose_mg ? `${r.proxima_dose_mg}mg` : ''
 
-    const msg = [
+    const texto = [
       `Ola, *${p.nome}*!`,
       ``,
       `Sua proxima aplicacao${doseStr ? ` de *${doseStr}*` : ''} esta marcada para *${dataFormatada}*.`,
       ``,
-      `Confirme sua presenca ou entre em contato com a clinica.`,
-      ``,
-      `_ProNutro - Nutrologia e Terapias Integrativas_`,
+      `Voce confirma sua presenca?`,
     ].join('\n')
 
-    const res = await fetch(`${UAZAPI_URL}/send/text`, {
+    const res = await fetch(`${UAZAPI_URL}/send/menu`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'token': UAZAPI_TOKEN },
-      body: JSON.stringify({ number: phone, text: msg }),
+      headers: { 'Content-Type': 'application/json', token: UAZAPI_TOKEN },
+      body: JSON.stringify({
+        number: phone,
+        type: 'button',
+        text: texto,
+        choices: ['Sim, vou comparecer', 'Preciso remarcar'],
+      }),
     })
 
     results.push({ patient: p.nome, phone, ok: res.ok, status: res.status })
+
+    if (res.ok) {
+      await supabase.from('pronutro_dose_records').update({
+        retorno_confirmacao_status: 'aguardando',
+        retorno_confirmacao_enviado_em: new Date().toISOString(),
+        retorno_confirmacao_respondido_em: null,
+      }).eq('id', r.id)
+    }
+
     await new Promise((resolve) => setTimeout(resolve, 1500))
   }
 
   return new Response(
-    JSON.stringify({ date: dateStr, total: toRemind.length, results: results.map(r => r.status === 'fulfilled' ? r.value : { error: String(r.reason) }) }),
+    JSON.stringify({ date: dateStr, total: toRemind.length, results }),
     { headers: { 'Content-Type': 'application/json' } }
   )
 })

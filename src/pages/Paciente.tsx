@@ -5,6 +5,7 @@ import SignaturePad, { type SignaturePadHandle } from '../components/SignaturePa
 import EvolucaoChart from '../components/EvolucaoChart'
 import { useIsAdmin } from '../hooks/useIsAdmin'
 import type { Patient, Contract, DoseRecord, Purchase, EvolucaoRecord, Bioimpedancia, Pagamento, Medicamento } from '../types'
+import { isNoShowPendente } from '../lib/noShow'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
@@ -139,6 +140,7 @@ export default function Paciente() {
   const round2 = (n: number) => Math.round(n * 100) / 100
   const cicloAtual = patient?.ciclo_atual ?? 1
   const dosesAtual = doses.filter(d => d.ciclo === cicloAtual)
+  const pacienteNaoCompareceu = isNoShowPendente(doses, cicloAtual)
   const totalComprado = round2(purchases.reduce((acc, p) => acc + Number(p.quantidade_mg), 0))
   const totalAplicado = round2(doses.reduce((acc, d) => acc + Number(d.dose_mg ?? 0), 0))
   const totalAplicadoCiclosAnteriores = round2(doses.filter(d => d.ciclo < cicloAtual).reduce((acc, d) => acc + Number(d.dose_mg ?? 0), 0))
@@ -623,6 +625,9 @@ export default function Paciente() {
             <h1 className="text-xl font-bold text-gray-800 truncate">{patient.nome}</h1>
             {patient.ativo === false && (
               <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full font-medium shrink-0">Inativo</span>
+            )}
+            {pacienteNaoCompareceu && (
+              <span className="text-xs bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded-full font-medium shrink-0">🚫 Não compareceu</span>
             )}
             {!showPatientInfo && (
               <span className="text-xs text-gray-400 font-normal shrink-0 hidden sm:inline">— {patient.medico_prescritor || 'sem médico'}</span>

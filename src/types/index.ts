@@ -98,6 +98,11 @@ export interface DoseRecord {
   assinatura_paciente: string | null
   assinatura_profissional: string | null
   receita_url: string | null
+  retorno_confirmacao_status: 'aguardando' | 'confirmado' | 'recusado' | null
+  retorno_confirmacao_enviado_em: string | null
+  retorno_confirmacao_respondido_em: string | null
+  retorno_verificado_em: string | null
+  no_show: boolean
 }
 
 export interface EvolucaoRecord {

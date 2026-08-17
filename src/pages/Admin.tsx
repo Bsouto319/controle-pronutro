@@ -6,12 +6,14 @@ import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import ImportCSVModal from '../components/ImportCSVModal'
 import { normalizeText } from '../lib/normalize'
+import { isNoShowPendente } from '../lib/noShow'
 
 interface PatientWithContract extends Patient {
   contract?: Contract
   doses: DoseRecord[]
   saldo: number
   proximoRetorno: string | null
+  noShow: boolean
 }
 
 function calcProximoRetorno(doses: DoseRecord[], cicloAtual: number): string | null {
@@ -34,7 +36,7 @@ const statusBadge = (status?: string) => {
   return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-200">✕ Expirado</span>
 }
 
-type FilterTab = 'ativos' | 'inativos' | 'negativos' | 'todos' | 'retorno'
+type FilterTab = 'ativos' | 'inativos' | 'negativos' | 'todos' | 'retorno' | 'no_show'
 
 export default function Admin() {
   const navigate = useNavigate()
@@ -78,6 +80,7 @@ export default function Admin() {
             doses: patientDoses,
             saldo: Math.round((comprado - aplicado) * 100) / 100,
             proximoRetorno: calcProximoRetorno(patientDoses, p.ciclo_atual ?? 1),
+            noShow: isNoShowPendente(patientDoses, p.ciclo_atual ?? 1),
           }
         })
         setPatients(merged)
@@ -119,8 +122,9 @@ export default function Admin() {
   const inativos = patients.filter((p) => p.ativo === false)
   const negativos = ativos.filter((p) => p.saldo <= 0)
   const comRetorno = ativos.filter((p) => p.proximoRetorno)
+  const naoCompareceram = ativos.filter((p) => p.noShow)
 
-  const byTab = tab === 'ativos' ? ativos : tab === 'inativos' ? inativos : tab === 'negativos' ? negativos : tab === 'retorno' ? comRetorno : patients
+  const byTab = tab === 'ativos' ? ativos : tab === 'inativos' ? inativos : tab === 'negativos' ? negativos : tab === 'retorno' ? comRetorno : tab === 'no_show' ? naoCompareceram : patients
 
   const filtered = byTab
     .filter(
@@ -152,6 +156,7 @@ export default function Admin() {
         doses: patientDoses,
         saldo: Math.round((comprado - aplicado) * 100) / 100,
         proximoRetorno: calcProximoRetorno(patientDoses, p.ciclo_atual ?? 1),
+        noShow: isNoShowPendente(patientDoses, p.ciclo_atual ?? 1),
       }
     }))
     setLoading(false)
@@ -179,7 +184,7 @@ export default function Admin() {
 
       {/* Abas */}
       <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-xl w-fit">
-        {([['retorno', `📅 Retorno (${comRetorno.length})`, 'text-blue-600'], ['ativos', `Ativos (${ativos.length})`, 'text-green-700'], ['inativos', `Inativos (${inativos.length})`, 'text-gray-500'], ['negativos', `⚠ Saldo negativo (${negativos.length})`, 'text-red-600'], ['todos', 'Todos', 'text-gray-600']] as const).map(([key, label, _]) => (
+        {([['retorno', `📅 Retorno (${comRetorno.length})`, 'text-blue-600'], ['no_show', `🚫 Não compareceu (${naoCompareceram.length})`, 'text-red-600'], ['ativos', `Ativos (${ativos.length})`, 'text-green-700'], ['inativos', `Inativos (${inativos.length})`, 'text-gray-500'], ['negativos', `⚠ Saldo negativo (${negativos.length})`, 'text-red-600'], ['todos', 'Todos', 'text-gray-600']] as const).map(([key, label, _]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
@@ -300,6 +305,11 @@ export default function Admin() {
                       📅 {format(new Date(p.proximoRetorno + 'T12:00:00'), 'dd/MM/yy', { locale: ptBR })}
                     </span>
                   )}
+                  {p.noShow && (
+                    <span className="text-xs bg-red-50 text-red-700 border border-red-200 px-1.5 py-0.5 rounded-full font-medium">
+                      🚫 Não compareceu
+                    </span>
+                  )}
                   <span className="text-xs text-gray-300 ml-auto">
                     {format(new Date(p.created_at), 'dd/MM/yy', { locale: ptBR })}
                   </span>
@@ -364,6 +374,11 @@ export default function Admin() {
                           {format(new Date(p.proximoRetorno + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}
                         </span>
                       ) : <span className="text-gray-300 text-xs">—</span>}
+                      {p.noShow && (
+                        <span className="ml-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border bg-red-50 text-red-700 border-red-200">
+                          🚫 Não compareceu
+                        </span>
+                      )}
                     </td>
                     <td className="px-5 py-3.5 text-gray-400 text-xs">
                       {format(new Date(p.created_at), 'dd/MM/yyyy', { locale: ptBR })}
