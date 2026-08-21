@@ -516,9 +516,25 @@ export default function Paciente() {
       return
     }
     setFinalizando(true)
-    const bioMaisRecente = [...bioimpedancias]
-      .filter(b => b.analise_paciente)
-      .sort((a, b) => (a.data_exame < b.data_exame ? 1 : -1))[0]
+
+    // Pega o exame mais recente (com ou sem análise já gerada) — se a análise
+    // automática do upload falhou silenciosamente, gera agora na hora, pra
+    // garantir que o paciente sempre receba o resultado ao finalizar.
+    let bioMaisRecente = [...bioimpedancias].sort((a, b) => (a.data_exame < b.data_exame ? 1 : -1))[0]
+    if (bioMaisRecente && !bioMaisRecente.analise_paciente) {
+      try {
+        const { data, error: analiseError } = await supabase.functions.invoke('analyze-bioimpedancia', {
+          body: { bioimpedancia_id: bioMaisRecente.id },
+        })
+        if (!analiseError && data?.analise_paciente) {
+          bioMaisRecente = { ...bioMaisRecente, analise_gpt: data.analise, analise_paciente: data.analise_paciente }
+          setBioimpedancias(prev => prev.map(b => b.id === bioMaisRecente!.id ? bioMaisRecente! : b))
+        }
+      } catch (err) {
+        console.error('analise de bioimpedancia falhou ao finalizar protocolo', err)
+      }
+    }
+
     const { error } = await supabase.functions.invoke('send-protocol-report', {
       body: {
         patient_name: patient.nome,
