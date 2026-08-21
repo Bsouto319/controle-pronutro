@@ -35,7 +35,7 @@ Deno.serve(async () => {
 
   const { data: candidatos, error } = await supabase
     .from('pronutro_dose_records')
-    .select('id, patient_id, ciclo, semana, proxima_data_aplicacao, proxima_dose_mg, pronutro_patients!inner(nome, telefone, ativo)')
+    .select('id, patient_id, ciclo, semana, proxima_data_aplicacao, proxima_dose_mg, pronutro_patients!inner(nome, telefone, ativo, ciclo_atual)')
     .not('proxima_data_aplicacao', 'is', null)
     .gte('proxima_data_aplicacao', limiteStr)
     .is('retorno_verificado_em', null);
@@ -58,8 +58,16 @@ Deno.serve(async () => {
   const marcarComFalta: string[] = [];
 
   for (const c of candidatos ?? []) {
-    const p = c.pronutro_patients as { nome: string; telefone: string; ativo: boolean } | null;
+    const p = c.pronutro_patients as { nome: string; telefone: string; ativo: boolean; ciclo_atual: number } | null;
     if (!p?.telefone || p.ativo === false) { naoProcessar.push(c.id); continue; }
+
+    // So vale a pena checar a semana "vigente" -- se o paciente ja avancou pra
+    // um ciclo novo (Finalizar Protocolo / Iniciar Novo Protocolo), a semana em
+    // aberto de um ciclo antigo nao e mais no-show, so ficou obsoleta.
+    if (c.ciclo !== (p.ciclo_atual ?? 1)) {
+      marcarSemFalta.push(c.id);
+      continue;
+    }
 
     const janelaFim = fimDaJanela(c.proxima_data_aplicacao);
     if (hoje <= janelaFim) continue; // janela ainda nao fechou, verifica de novo amanha
@@ -70,6 +78,24 @@ Deno.serve(async () => {
 
     if (proxima?.data_aplicacao) {
       // paciente ja voltou (mesmo que fora da janela original) — nao e mais no-show
+      marcarSemFalta.push(c.id);
+      continue;
+    }
+
+    // Reconfirma na hora, direto no banco -- a lista de "todasDoses" foi buscada
+    // uma vez so no inicio, e o processamento de varios pacientes com espacamento
+    // pode levar minutos. Evita mandar a mensagem pra quem acabou de ser atendido
+    // enquanto a funcao ainda estava rodando.
+    const { data: aindaSemRetorno } = await supabase
+      .from('pronutro_dose_records')
+      .select('id')
+      .eq('patient_id', c.patient_id)
+      .eq('ciclo', c.ciclo)
+      .eq('semana', c.semana + 1)
+      .not('data_aplicacao', 'is', null)
+      .maybeSingle();
+
+    if (aindaSemRetorno) {
       marcarSemFalta.push(c.id);
       continue;
     }
