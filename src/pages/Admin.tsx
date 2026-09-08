@@ -124,6 +124,21 @@ export default function Admin() {
   const comRetorno = ativos.filter((p) => p.proximoRetorno)
   const naoCompareceram = ativos.filter((p) => p.noShow)
 
+  // Confirmação de WhatsApp (dose ou protocolo) enviada há mais de 20h e nunca processada
+  // costuma indicar bug na leitura da resposta (ex: resposta veio por botão e o parser só lia texto),
+  // não falta de resposta do paciente — vale checar quando esse número aparecer.
+  const STUCK_HOURS = 20
+  const stuckThresholdMs = Date.now() - STUCK_HOURS * 3600 * 1000
+  const stuckDoseConfirmations = patients.flatMap((p) => p.doses).filter(
+    (d) => d.retorno_confirmacao_status === 'aguardando' && d.retorno_confirmacao_enviado_em
+      && new Date(d.retorno_confirmacao_enviado_em).getTime() < stuckThresholdMs
+  )
+  const stuckProtocolConfirmations = patients.filter(
+    (p) => p.protocolo_confirmacao_status === 'aguardando' && p.protocolo_confirmacao_enviado_em
+      && new Date(p.protocolo_confirmacao_enviado_em).getTime() < stuckThresholdMs
+  )
+  const totalStuckConfirmations = stuckDoseConfirmations.length + stuckProtocolConfirmations.length
+
   const byTab = tab === 'ativos' ? ativos : tab === 'inativos' ? inativos : tab === 'negativos' ? negativos : tab === 'retorno' ? comRetorno : tab === 'no_show' ? naoCompareceram : patients
 
   const filtered = byTab
@@ -181,6 +196,21 @@ export default function Admin() {
           <div className="text-xs text-amber-600 mt-0.5">Aguardando</div>
         </div>
       </div>
+
+      {/* Alerta: confirmação de WhatsApp presa há muito tempo sem processar */}
+      {totalStuckConfirmations > 0 && (
+        <div className="mb-4 flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
+          <span>⚠️</span>
+          <span>
+            <strong>{totalStuckConfirmations}</strong> confirmação{totalStuckConfirmations > 1 ? 'ões' : ''} de WhatsApp
+            {totalStuckConfirmations > 1 ? ' presas' : ' presa'} há mais de {STUCK_HOURS}h sem processar
+            {stuckDoseConfirmations.length > 0 && stuckProtocolConfirmations.length > 0
+              ? ` (${stuckDoseConfirmations.length} de dose, ${stuckProtocolConfirmations.length} de protocolo)`
+              : ''}
+            . Não costuma ser paciente sem responder — geralmente é bug na leitura da resposta. Vale checar com o Claude Code.
+          </span>
+        </div>
+      )}
 
       {/* Abas */}
       <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-xl w-fit">

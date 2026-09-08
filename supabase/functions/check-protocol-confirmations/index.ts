@@ -19,6 +19,18 @@ function formatPhone(raw: string): string | null {
   return null;
 }
 
+// WhatsApp às vezes registra o número sem o 9º dígito extra do celular (formato antigo).
+// Gera as duas variantes (com e sem o 9) pra não perder o match por causa disso.
+function phoneVariants(raw: string): string[] {
+  const base = formatPhone(raw);
+  if (!base) return [];
+  const ddd = base.slice(2, 4);
+  const local = base.slice(4);
+  if (local.length === 9 && local[0] === '9') return [base, '55' + ddd + local.slice(1)];
+  if (local.length === 8) return [base, '55' + ddd + '9' + local];
+  return [base];
+}
+
 function toMs(ts: number): number {
   return ts > 2_000_000_000 ? ts : ts * 1000;
 }
@@ -62,23 +74,25 @@ Deno.serve(async (req: Request) => {
     const results: Array<{ patient: string; status: string }> = [];
 
     for (const p of pendentes) {
-      const numero = p.telefone ? formatPhone(p.telefone) : null;
-      if (!numero) continue;
+      const numeros = p.telefone ? phoneVariants(p.telefone) : [];
+      if (numeros.length === 0) continue;
       const enviadoMs = p.protocolo_confirmacao_enviado_em ? new Date(p.protocolo_confirmacao_enviado_em).getTime() : 0;
 
       const resposta = all.find((m: any) => {
         const ts = toMs(m.messageTimestamp);
-        const texto: string = m.text || m.content?.text || m.body || '';
+        const texto: string = m.text || m.content?.text || m.body || m.buttonOrListid
+          || m.content?.selectedDisplayText || m.content?.Response?.SelectedDisplayText || '';
         return ts > enviadoMs
           && !m.isGroup
+          && !m.fromMe // resposta do paciente, nunca eco/mensagem da propria clinica
           && typeof m.chatid === 'string'
-          && m.chatid.startsWith(numero)
-          && !m.chatid.startsWith(numero + ':') // ignora eco de mensagem enviada pela propria clinica
+          && numeros.some(n => m.chatid.startsWith(n) && !m.chatid.startsWith(n + ':')) // ignora eco de mensagem enviada pela propria clinica
           && !!texto;
       });
 
       if (!resposta) continue;
-      const texto: string = resposta.text || resposta.content?.text || resposta.body || '';
+      const texto: string = resposta.text || resposta.content?.text || resposta.body || resposta.buttonOrListid
+        || resposta.content?.selectedDisplayText || resposta.content?.Response?.SelectedDisplayText || '';
 
       let novoStatus: string | null = null;
       if (isAfirmativo(texto)) novoStatus = 'confirmado';
