@@ -8,15 +8,17 @@ import ImportCSVModal from '../components/ImportCSVModal'
 import { normalizeText } from '../lib/normalize'
 import { isNoShowPendente } from '../lib/noShow'
 
+type AdminDoseRecord = Pick<DoseRecord, 'id' | 'patient_id' | 'ciclo' | 'semana' | 'dose_mg' | 'data_aplicacao' | 'proxima_data_aplicacao' | 'no_show'>
+
 interface PatientWithContract extends Patient {
   contract?: Contract
-  doses: DoseRecord[]
+  doses: AdminDoseRecord[]
   saldo: number
   proximoRetorno: string | null
   noShow: boolean
 }
 
-function calcProximoRetorno(doses: DoseRecord[], cicloAtual: number): string | null {
+function calcProximoRetorno(doses: AdminDoseRecord[], cicloAtual: number): string | null {
   const aplicadasNoCiclo = doses.filter((d) => d.ciclo === cicloAtual && d.data_aplicacao)
   const ultima = [...aplicadasNoCiclo].sort((a, b) => b.semana - a.semana)[0]
   return ultima?.proxima_data_aplicacao ?? null
@@ -63,7 +65,7 @@ export default function Admin() {
 
         const { data: doses } = await supabase
           .from('pronutro_dose_records')
-          .select('*')
+          .select('id,patient_id,ciclo,semana,dose_mg,data_aplicacao,proxima_data_aplicacao,no_show')
 
         const { data: purchases } = await supabase
           .from('pronutro_purchases')
