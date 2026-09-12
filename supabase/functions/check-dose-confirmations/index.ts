@@ -46,6 +46,58 @@ function isNegativo(texto: string): boolean {
   return t.includes('não') || t.includes('nao') || t.includes('remarcar') || t.includes('reagend');
 }
 
+function extrairTexto(m: any): string {
+  return m.text || m.content?.text || m.body || m.buttonOrListid
+    || m.content?.selectedDisplayText || m.content?.Response?.SelectedDisplayText || '';
+}
+
+// Busca as mensagens de UM chat específico (não a lista global) -- uma busca
+// global de "últimas 500 mensagens da conta inteira" fica pequena demais
+// conforme o volume de mensagens da clínica cresce: uma conversa de 3 semanas
+// atrás simplesmente sai da janela porque mensagens de OUTROS pacientes mais
+// recentes empurram ela pra fora. Buscando por chatid, cada paciente tem sua
+// própria janela, não compete por espaço com o resto da conta.
+async function buscarRespostaPaciente(numeros: string[], enviadoMs: number): Promise<{ status: 'confirmado' | 'recusado' } | null> {
+  for (const numero of numeros) {
+    const res = await fetch(`${UAZAPI_URL}/message/find`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', token: UAZAPI_TOKEN },
+      body: JSON.stringify({ chatid: `${numero}@s.whatsapp.net`, limit: 50, orderBy: 'messageTimestamp', order: 'DESC' }),
+    });
+    if (!res.ok) continue;
+    const payload = await res.json();
+    const msgs: any[] = payload.messages ?? [];
+    if (msgs.length === 0) continue;
+
+    const candidatos = msgs
+      .filter((m) => toMs(m.messageTimestamp) > enviadoMs && !m.isGroup && !m.fromMe)
+      .sort((a, b) => toMs(a.messageTimestamp) - toMs(b.messageTimestamp)); // mais antiga primeiro
+
+    for (const m of candidatos) {
+      const texto = extrairTexto(m);
+      if (!texto) continue;
+      if (isAfirmativo(texto)) return { status: 'confirmado' };
+      if (isNegativo(texto)) return { status: 'recusado' };
+    }
+  }
+  return null;
+}
+
+// Roda no máximo N buscas em paralelo por vez, pra não estourar limite da UAZAPI
+// nem deixar a function rodando por minutos com 100+ pacientes pendentes.
+async function withConcurrency<T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function run() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await worker(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, run));
+  return results;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
 
@@ -62,52 +114,24 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ ok: true, pendentes: 0 }), { headers: { 'Content-Type': 'application/json', ...CORS } });
     }
 
-    const res = await fetch(`${UAZAPI_URL}/message/find`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', token: UAZAPI_TOKEN },
-      body: JSON.stringify({ limit: 500, orderBy: 'messageTimestamp', order: 'DESC' }),
-    });
-    if (!res.ok) throw new Error(`UAZAPI ${res.status}`);
-    const payload = await res.json();
-    const all: any[] = payload.messages ?? [];
-
     const results: Array<{ patient: string; status: string }> = [];
 
-    for (const r of pendentes) {
+    await withConcurrency(pendentes, 8, async (r) => {
       const p = r.pronutro_patients as { nome: string; telefone: string; ativo: boolean } | null;
-      if (!p?.telefone || p.ativo === false) continue;
+      if (!p?.telefone || p.ativo === false) return;
       const numeros = phoneVariants(p.telefone);
-      if (numeros.length === 0) continue;
+      if (numeros.length === 0) return;
       const enviadoMs = r.retorno_confirmacao_enviado_em ? new Date(r.retorno_confirmacao_enviado_em).getTime() : 0;
 
-      const resposta = all.find((m: any) => {
-        const ts = toMs(m.messageTimestamp);
-        const texto: string = m.text || m.content?.text || m.body || m.buttonOrListid
-          || m.content?.selectedDisplayText || m.content?.Response?.SelectedDisplayText || '';
-        return ts > enviadoMs
-          && !m.isGroup
-          && !m.fromMe // resposta do paciente, nunca eco/mensagem da propria clinica
-          && typeof m.chatid === 'string'
-          && numeros.some(n => m.chatid.startsWith(n) && !m.chatid.startsWith(n + ':')) // ignora eco de mensagem enviada pela propria clinica
-          && !!texto;
-      });
+      const resposta = await buscarRespostaPaciente(numeros, enviadoMs);
+      if (!resposta) return;
 
-      if (!resposta) continue;
-      const texto: string = resposta.text || resposta.content?.text || resposta.body || resposta.buttonOrListid
-        || resposta.content?.selectedDisplayText || resposta.content?.Response?.SelectedDisplayText || '';
-
-      let novoStatus: string | null = null;
-      if (isAfirmativo(texto)) novoStatus = 'confirmado';
-      else if (isNegativo(texto)) novoStatus = 'recusado';
-
-      if (novoStatus) {
-        await db.from('pronutro_dose_records').update({
-          retorno_confirmacao_status: novoStatus,
-          retorno_confirmacao_respondido_em: new Date().toISOString(),
-        }).eq('id', r.id);
-        results.push({ patient: p.nome, status: novoStatus });
-      }
-    }
+      await db.from('pronutro_dose_records').update({
+        retorno_confirmacao_status: resposta.status,
+        retorno_confirmacao_respondido_em: new Date().toISOString(),
+      }).eq('id', r.id);
+      results.push({ patient: p.nome, status: resposta.status });
+    });
 
     return new Response(JSON.stringify({ ok: true, pendentes: pendentes.length, atualizados: results }), {
       headers: { 'Content-Type': 'application/json', ...CORS },
