@@ -48,34 +48,23 @@ Deno.serve(async () => {
     const dataFormatada = new Date(r.proxima_data_aplicacao + 'T12:00:00').toLocaleDateString('pt-BR')
     const doseStr = r.proxima_dose_mg ? `${r.proxima_dose_mg}mg` : ''
 
+    // Só avisa -- não pede confirmação por botão (isso gerava um fluxo de
+    // checagem de resposta que quebrava toda vez que o formato de mensagem
+    // do WhatsApp mudava ou o volume de mensagem da clínica crescia. Decisão
+    // do Bruno 12/09: mandar o lembrete e ponto, sem rastrear resposta.
     const texto = [
       `Ola, *${p.nome}*!`,
       ``,
       `Sua proxima aplicacao${doseStr ? ` de *${doseStr}*` : ''} esta marcada para *${dataFormatada}*.`,
-      ``,
-      `Voce confirma sua presenca?`,
     ].join('\n')
 
-    const res = await fetch(`${UAZAPI_URL}/send/menu`, {
+    const res = await fetch(`${UAZAPI_URL}/send/text`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', token: UAZAPI_TOKEN },
-      body: JSON.stringify({
-        number: phone,
-        type: 'button',
-        text: texto,
-        choices: ['Sim, vou comparecer', 'Preciso remarcar'],
-      }),
+      body: JSON.stringify({ number: phone, text: texto }),
     })
 
     results.push({ patient: p.nome, phone, ok: res.ok, status: res.status })
-
-    if (res.ok) {
-      await supabase.from('pronutro_dose_records').update({
-        retorno_confirmacao_status: 'aguardando',
-        retorno_confirmacao_enviado_em: new Date().toISOString(),
-        retorno_confirmacao_respondido_em: null,
-      }).eq('id', r.id)
-    }
 
     await new Promise((resolve) => setTimeout(resolve, 1500))
   }

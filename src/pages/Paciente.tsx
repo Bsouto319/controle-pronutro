@@ -481,12 +481,12 @@ export default function Paciente() {
       body: { patient_id: patient.id, patient_name: patient.nome, patient_phone: patient.telefone, tipo },
     })
     if (error) {
-      alert('Relatório enviado, mas houve erro ao mandar o botão de confirmação. Tente de novo pela ficha.')
+      alert('Relatório enviado, mas houve erro ao mandar o aviso por WhatsApp. Tente de novo pela ficha.')
       return
     }
     setPatient(p => p ? {
       ...p,
-      protocolo_confirmacao_status: 'aguardando',
+      protocolo_confirmacao_status: 'notificado',
       protocolo_confirmacao_tipo: tipo,
       protocolo_confirmacao_enviado_em: new Date().toISOString(),
       protocolo_confirmacao_respondido_em: null,
@@ -702,23 +702,10 @@ export default function Paciente() {
 
         {patient.protocolo_confirmacao_status && (
           <div className="mb-4">
-            {patient.protocolo_confirmacao_status === 'aguardando' && (
-              <span className="inline-flex items-center gap-1 text-xs bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-full font-medium">
-                ⏳ Aguardando confirmação do paciente sobre {patient.protocolo_confirmacao_tipo === 'novo' ? 'iniciar novo protocolo' : 'o término do protocolo'}
-                {patient.protocolo_confirmacao_enviado_em && ` (enviado ${format(new Date(patient.protocolo_confirmacao_enviado_em), "dd/MM 'às' HH:mm", { locale: ptBR })})`}
-              </span>
-            )}
-            {patient.protocolo_confirmacao_status === 'confirmado' && (
-              <span className="inline-flex items-center gap-1 text-xs bg-green-50 text-green-700 border border-green-200 px-2.5 py-1 rounded-full font-medium">
-                ✓ Paciente confirmou {patient.protocolo_confirmacao_tipo === 'novo' ? 'o novo protocolo' : 'o término'}
-                {patient.protocolo_confirmacao_respondido_em && ` em ${format(new Date(patient.protocolo_confirmacao_respondido_em), "dd/MM 'às' HH:mm", { locale: ptBR })}`}
-              </span>
-            )}
-            {patient.protocolo_confirmacao_status === 'recusado' && (
-              <span className="inline-flex items-center gap-1 text-xs bg-red-50 text-red-600 border border-red-200 px-2.5 py-1 rounded-full font-medium">
-                ✕ Paciente NÃO confirmou {patient.protocolo_confirmacao_tipo === 'novo' ? 'o novo protocolo' : 'o término'} — falar com a clínica
-              </span>
-            )}
+            <span className="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1 rounded-full font-medium">
+              ✓ Paciente avisado sobre {patient.protocolo_confirmacao_tipo === 'novo' ? 'o novo protocolo' : 'o término do protocolo'}
+              {patient.protocolo_confirmacao_enviado_em && ` em ${format(new Date(patient.protocolo_confirmacao_enviado_em), "dd/MM 'às' HH:mm", { locale: ptBR })}`}
+            </span>
           </div>
         )}
 

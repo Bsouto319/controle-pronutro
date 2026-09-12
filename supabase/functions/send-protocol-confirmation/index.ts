@@ -38,33 +38,31 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // Só avisa -- não pede confirmação por botão. Rastrear a resposta gerava
+    // um fluxo de checagem que quebrava toda vez que o formato de mensagem
+    // do WhatsApp mudava. Decisão do Bruno 12/09: mandar o aviso e ponto.
     const nome = patient_name || 'Paciente';
     const texto = tipo === 'termino'
-      ? `Ola, *${nome}*!\n\nA Clinica ProNutro esta finalizando seu protocolo atual de tratamento.\n\nVoce esta de acordo com o termino deste protocolo?`
-      : `Ola, *${nome}*!\n\nVamos iniciar um novo protocolo de tratamento com voce na Clinica ProNutro.\n\nVoce esta de acordo em iniciar este novo protocolo?`;
+      ? `Ola, *${nome}*!\n\nA Clinica ProNutro esta finalizando seu protocolo atual de tratamento.`
+      : `Ola, *${nome}*!\n\nVamos iniciar um novo protocolo de tratamento com voce na Clinica ProNutro.`;
 
-    const res = await fetch(`${UAZAPI_URL}/send/menu`, {
+    const res = await fetch(`${UAZAPI_URL}/send/text`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', token: UAZAPI_TOKEN },
-      body: JSON.stringify({
-        number: numero,
-        type: 'button',
-        text: texto,
-        choices: ['Sim, estou de acordo', 'Não, quero falar com a clínica'],
-      }),
+      body: JSON.stringify({ number: numero, text: texto }),
     });
 
     const sendData = await res.json().catch(() => ({}));
 
     if (!res.ok) {
-      return new Response(JSON.stringify({ error: 'falha ao enviar botao', detail: sendData }), {
+      return new Response(JSON.stringify({ error: 'falha ao enviar mensagem', detail: sendData }), {
         status: 502, headers: { 'Content-Type': 'application/json', ...CORS },
       });
     }
 
     const db = createClient(SUPABASE_URL, SUPABASE_KEY);
     await db.from('pronutro_patients').update({
-      protocolo_confirmacao_status: 'aguardando',
+      protocolo_confirmacao_status: 'notificado',
       protocolo_confirmacao_tipo: tipo,
       protocolo_confirmacao_enviado_em: new Date().toISOString(),
       protocolo_confirmacao_respondido_em: null,
