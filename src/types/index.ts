@@ -89,6 +89,38 @@ export interface Procedimento {
   updated_at: string
 }
 
+export type OrcamentoStatus = 'rascunho' | 'enviado' | 'aguardando_aprovacao' | 'aprovado' | 'recusado' | 'cancelado' | 'convertido'
+
+export interface Orcamento {
+  id: string
+  numero: number
+  data: string
+  validade: string | null
+  patient_id: string
+  medico_id: string | null
+  forma_pagamento: string | null
+  parcelas: number
+  desconto: number
+  observacoes: string | null
+  status: OrcamentoStatus
+  pagamento_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface OrcamentoItem {
+  id: string
+  orcamento_id: string
+  medicamento_id: string | null
+  procedimento_id: string | null
+  nome: string
+  quantidade: number
+  unidade: string
+  valor_unitario: number
+  valor_total: number
+  created_at: string
+}
+
 export interface Meta {
   id: string
   mes: string

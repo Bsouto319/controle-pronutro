@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import { Navigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useIsAdmin } from '../hooks/useIsAdmin'
@@ -19,6 +19,82 @@ function round2(n: number) {
   return Math.round(n * 100) / 100
 }
 
+interface MedStat {
+  med: Medicamento
+  comprado: number
+  alocadoPacientes: number
+  saldo: number
+  emAlerta: boolean
+  negativo: boolean
+}
+
+// Corpo de detalhe (3 cartões de números + aviso de saldo negativo + campo
+// de alerta) reaproveitado tanto pelo cartão fixo do principal quanto pela
+// linha expandida da tabela dos demais medicamentos.
+function DetalheMedicamento({ s, ajusteSaldo, setAjusteSaldo, corrigirSaldo, savingAjuste, alertaForm, setAlertaForm, saveAlerta, savingAlerta }: {
+  s: MedStat
+  ajusteSaldo: Record<string, string>
+  setAjusteSaldo: Dispatch<SetStateAction<Record<string, string>>>
+  corrigirSaldo: (medId: string) => void
+  savingAjuste: string | null
+  alertaForm: Record<string, string>
+  setAlertaForm: Dispatch<SetStateAction<Record<string, string>>>
+  saveAlerta: (medId: string) => void
+  savingAlerta: string | null
+}) {
+  const { med, comprado, alocadoPacientes, saldo, emAlerta, negativo } = s
+  const unidade = med.is_principal ? 'mg' : 'un'
+  return (
+    <div>
+      {negativo && (
+        <div className="mb-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700 flex flex-wrap items-center gap-2">
+          <span>⚠️ Saldo negativo — foi debitado mais do que entrou no sistema. Faça uma contagem física e corrija:</span>
+          <input
+            type="text" placeholder="+/- valor"
+            value={ajusteSaldo[med.id] ?? ''}
+            onChange={(e) => setAjusteSaldo((a) => ({ ...a, [med.id]: e.target.value }))}
+            className="w-24 px-2 py-1 border border-red-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-red-400"
+          />
+          <button onClick={() => corrigirSaldo(med.id)} disabled={savingAjuste === med.id}
+            className="text-xs font-semibold text-red-700 hover:underline disabled:opacity-50">
+            {savingAjuste === med.id ? 'Salvando...' : 'Corrigir saldo'}
+          </button>
+        </div>
+      )}
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
+          <p className="text-xs text-blue-500 font-medium mb-1">Comprado (histórico)</p>
+          <p className="text-base sm:text-xl font-bold text-blue-700">{comprado} {unidade}</p>
+        </div>
+        <div className="bg-orange-50 border border-orange-100 rounded-xl p-3 text-center">
+          <p className="text-xs text-orange-500 font-medium mb-1">Vendido a pacientes (histórico)</p>
+          <p className="text-base sm:text-xl font-bold text-orange-700">{alocadoPacientes} {unidade}</p>
+        </div>
+        <div className={`border rounded-xl p-3 text-center ${emAlerta ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-100'}`}>
+          <p className={`text-xs font-medium mb-1 ${emAlerta ? 'text-red-500' : 'text-green-500'}`}>Saldo atual</p>
+          <p className={`text-base sm:text-xl font-bold ${emAlerta ? 'text-red-700' : 'text-green-700'}`}>{saldo} {unidade}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 mt-3">
+        <label className="text-xs text-gray-500">Alertar quando saldo cair até</label>
+        <input
+          type="number" step="0.5" min="0"
+          value={alertaForm[med.id] ?? ''}
+          onChange={(e) => setAlertaForm((f) => ({ ...f, [med.id]: e.target.value }))}
+          className="w-24 px-2 py-1 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+        />
+        <button
+          onClick={() => saveAlerta(med.id)}
+          disabled={savingAlerta === med.id}
+          className="text-xs bg-gray-100 text-gray-600 px-3 py-1 rounded-lg font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
+        >
+          {savingAlerta === med.id ? 'Salvando...' : 'Salvar'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function Estoque() {
   const { isAdmin, loading: loadingAdmin } = useIsAdmin()
   const [purchases, setPurchases] = useState<PurchaseWithPatient[]>([])
@@ -32,6 +108,8 @@ export default function Estoque() {
   const [purchaseForm, setPurchaseForm] = useState({ medicamento_id: '', data_compra: '', quantidade: '', lote: '', observacoes: '' })
   const [ajusteSaldo, setAjusteSaldo] = useState<Record<string, string>>({})
   const [savingAjuste, setSavingAjuste] = useState<string | null>(null)
+  const [buscaMed, setBuscaMed] = useState('')
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -153,6 +231,17 @@ export default function Estoque() {
   const medicamentoSelecionado = medicamentos.find((m) => m.id === purchaseForm.medicamento_id) ?? null
   const unidadeSelecionada = medicamentoSelecionado?.is_principal ? 'mg' : 'un'
 
+  // Com 28+ medicamentos cadastrados, um cartão grande por medicamento deixa
+  // a página gigante — quase todos têm ALGUM valor de estoque inicial
+  // cadastrado (mesmo sem histórico de compra), então filtrar por "sem
+  // movimento" não escondia quase nada na prática. Em vez disso: o principal
+  // (protocolo semanal) sempre aparece com o cartão completo; o resto vira
+  // uma tabela compacta (1 linha por medicamento) que expande sob demanda.
+  const buscaNorm = buscaMed.trim().toLowerCase()
+  const outrosMedicamentos = porMedicamento
+    .filter((s) => !s.med.is_principal)
+    .filter((s) => !buscaNorm || s.med.nome.toLowerCase().includes(buscaNorm))
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
@@ -172,67 +261,83 @@ export default function Estoque() {
         </div>
       )}
 
-      {/* Um cartão por medicamento */}
-      <div className="space-y-3">
-        {porMedicamento.map(({ med, comprado, alocadoPacientes, saldo, emAlerta, negativo }) => (
-          <div key={med.id} className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-bold text-gray-700">
-                {med.nome} {med.is_principal && <span className="text-xs font-normal text-gray-400">(protocolo semanal)</span>}
-              </h2>
-              {emAlerta && <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">Estoque baixo</span>}
-            </div>
-            {negativo && (
-              <div className="mb-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700 flex flex-wrap items-center gap-2">
-                <span>⚠️ Saldo negativo — foi debitado mais do que entrou no sistema. Faça uma contagem física e corrija:</span>
-                <input
-                  type="text" placeholder="+/- valor"
-                  value={ajusteSaldo[med.id] ?? ''}
-                  onChange={(e) => setAjusteSaldo((a) => ({ ...a, [med.id]: e.target.value }))}
-                  className="w-24 px-2 py-1 border border-red-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-red-400"
-                />
-                <button onClick={() => corrigirSaldo(med.id)} disabled={savingAjuste === med.id}
-                  className="text-xs font-semibold text-red-700 hover:underline disabled:opacity-50">
-                  {savingAjuste === med.id ? 'Salvando...' : 'Corrigir saldo'}
-                </button>
-              </div>
-            )}
-            <div className="grid grid-cols-3 gap-2 sm:gap-3">
-              <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
-                <p className="text-xs text-blue-500 font-medium mb-1">Comprado (histórico)</p>
-                <p className="text-base sm:text-xl font-bold text-blue-700">{comprado} {med.is_principal ? 'mg' : 'un'}</p>
-              </div>
-              <div className="bg-orange-50 border border-orange-100 rounded-xl p-3 text-center">
-                <p className="text-xs text-orange-500 font-medium mb-1">Vendido a pacientes (histórico)</p>
-                <p className="text-base sm:text-xl font-bold text-orange-700">{alocadoPacientes} {med.is_principal ? 'mg' : 'un'}</p>
-              </div>
-              <div className={`border rounded-xl p-3 text-center ${emAlerta ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-100'}`}>
-                <p className={`text-xs font-medium mb-1 ${emAlerta ? 'text-red-500' : 'text-green-500'}`}>Saldo atual</p>
-                <p className={`text-base sm:text-xl font-bold ${emAlerta ? 'text-red-700' : 'text-green-700'}`}>{saldo} {med.is_principal ? 'mg' : 'un'}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 mt-3">
-              <label className="text-xs text-gray-500">Alertar quando saldo cair até</label>
-              <input
-                type="number" step="0.5" min="0"
-                value={alertaForm[med.id] ?? ''}
-                onChange={(e) => setAlertaForm((f) => ({ ...f, [med.id]: e.target.value }))}
-                className="w-24 px-2 py-1 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
-              />
-              <button
-                onClick={() => saveAlerta(med.id)}
-                disabled={savingAlerta === med.id}
-                className="text-xs bg-gray-100 text-gray-600 px-3 py-1 rounded-lg font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
-              >
-                {savingAlerta === med.id ? 'Salvando...' : 'Salvar'}
-              </button>
-            </div>
+      {medicamentos.length === 0 && (
+        <p className="text-sm text-gray-400 bg-white rounded-2xl border border-gray-200 p-5">Nenhum medicamento cadastrado ainda — cadastre em Financeiro.</p>
+      )}
+
+      {/* Principal (protocolo semanal) — sempre com o cartão completo */}
+      {principalStats && (
+        <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-bold text-gray-700">
+              {principalStats.med.nome} <span className="text-xs font-normal text-gray-400">(protocolo semanal)</span>
+            </h2>
+            {principalStats.emAlerta && <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">Estoque baixo</span>}
           </div>
-        ))}
-        {medicamentos.length === 0 && (
-          <p className="text-sm text-gray-400 bg-white rounded-2xl border border-gray-200 p-5">Nenhum medicamento cadastrado ainda — cadastre em Financeiro.</p>
-        )}
-      </div>
+          <DetalheMedicamento
+            s={principalStats}
+            ajusteSaldo={ajusteSaldo} setAjusteSaldo={setAjusteSaldo} corrigirSaldo={corrigirSaldo} savingAjuste={savingAjuste}
+            alertaForm={alertaForm} setAlertaForm={setAlertaForm} saveAlerta={saveAlerta} savingAlerta={savingAlerta}
+          />
+        </div>
+      )}
+
+      {/* Demais medicamentos — tabela compacta, detalhe expande ao clicar */}
+      {outrosMedicamentos.length > 0 || medicamentos.length > 1 ? (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="p-4 pb-0">
+            <h2 className="text-sm font-bold text-gray-700 mb-3">Outros medicamentos</h2>
+            <input
+              type="text" placeholder="Buscar medicamento..."
+              value={buscaMed}
+              onChange={(e) => setBuscaMed(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/40 mb-3"
+            />
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-gray-400 border-t border-gray-100">
+                  <th className="px-4 py-2 font-medium">Medicamento</th>
+                  <th className="px-4 py-2 font-medium">Saldo atual</th>
+                  <th className="px-4 py-2 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {outrosMedicamentos.length === 0 && (
+                  <tr><td colSpan={3} className="px-4 py-4 text-gray-400 text-center">Nenhum medicamento encontrado.</td></tr>
+                )}
+                {outrosMedicamentos.map((s) => (
+                  <Fragment key={s.med.id}>
+                    <tr
+                      onClick={() => setExpandedId(expandedId === s.med.id ? null : s.med.id)}
+                      className="border-t border-gray-100 cursor-pointer hover:bg-gray-50"
+                    >
+                      <td className="px-4 py-2.5 font-medium text-gray-700">{s.med.nome}</td>
+                      <td className={`px-4 py-2.5 font-semibold ${s.negativo ? 'text-red-600' : s.emAlerta ? 'text-orange-600' : 'text-gray-700'}`}>
+                        {s.saldo} un
+                        {s.emAlerta && <span className="ml-2 text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-medium">baixo</span>}
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-gray-400 text-xs">{expandedId === s.med.id ? '▲ fechar' : '▼ detalhes'}</td>
+                    </tr>
+                    {expandedId === s.med.id && (
+                      <tr className="border-t border-gray-100 bg-gray-50/50">
+                        <td colSpan={3} className="px-4 py-4">
+                          <DetalheMedicamento
+                            s={s}
+                            ajusteSaldo={ajusteSaldo} setAjusteSaldo={setAjusteSaldo} corrigirSaldo={corrigirSaldo} savingAjuste={savingAjuste}
+                            alertaForm={alertaForm} setAlertaForm={setAlertaForm} saveAlerta={saveAlerta} savingAlerta={savingAlerta}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
 
       {/* Previsão da semana (só do medicamento principal) */}
       {medicamentoPrincipal && (

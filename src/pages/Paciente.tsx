@@ -1063,9 +1063,14 @@ export default function Paciente() {
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-bold text-gray-800">Financeiro</h2>
-            <Link to={`/financeiro?paciente=${id}`} className="text-xs text-brand hover:underline font-medium">
-              + Lançar pagamento
-            </Link>
+            <div className="flex items-center gap-3">
+              <Link to={`/orcamento?paciente=${id}`} className="text-xs text-brand hover:underline font-medium">
+                + Novo orçamento
+              </Link>
+              <Link to={`/financeiro?paciente=${id}`} className="text-xs text-brand hover:underline font-medium">
+                + Lançar pagamento
+              </Link>
+            </div>
           </div>
           {pagamentos.length === 0 ? (
             <p className="text-sm text-gray-400">Nenhum pagamento lançado ainda.</p>

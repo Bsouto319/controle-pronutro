@@ -9,6 +9,7 @@ import Paciente from './pages/Paciente'
 import Usuarios from './pages/Usuarios'
 import Estoque from './pages/Estoque'
 import Financeiro from './pages/Financeiro'
+import Orcamento from './pages/Orcamento'
 import LoginPage from './pages/LoginPage'
 import ResetSenha from './pages/ResetSenha'
 
@@ -66,6 +67,11 @@ export default function App() {
         <Route path="/financeiro" element={
           <ProtectedRoute>
             <Layout><Financeiro /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/orcamento" element={
+          <ProtectedRoute>
+            <Layout><Orcamento /></Layout>
           </ProtectedRoute>
         } />
       </Routes>
