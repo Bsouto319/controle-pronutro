@@ -141,7 +141,14 @@ export default function Paciente() {
   const cicloAtual = patient?.ciclo_atual ?? 1
   const dosesAtual = doses.filter(d => d.ciclo === cicloAtual)
   const pacienteNaoCompareceu = isNoShowPendente(doses, cicloAtual)
-  const totalComprado = round2(purchases.reduce((acc, p) => acc + Number(p.quantidade_mg), 0))
+  // Só soma compras do medicamento do protocolo semanal (Tirzepatida) --
+  // outras medicações (Vitamina D etc) têm unidade diferente e não podem
+  // entrar nessa conta (bug real: "20mg + 1 unidade" virava "21mg").
+  const medicamentoPrincipal = medicamentos.find((m) => m.is_principal) ?? null
+  const comprasPrincipal = medicamentoPrincipal
+    ? purchases.filter((p) => p.medicamento_id === medicamentoPrincipal.id)
+    : purchases.filter((p) => !p.medicamento_id)
+  const totalComprado = round2(comprasPrincipal.reduce((acc, p) => acc + Number(p.quantidade_mg), 0))
   const totalAplicado = round2(doses.reduce((acc, d) => acc + Number(d.dose_mg ?? 0), 0))
   const totalAplicadoCiclosAnteriores = round2(doses.filter(d => d.ciclo < cicloAtual).reduce((acc, d) => acc + Number(d.dose_mg ?? 0), 0))
   const saldo = round2(totalComprado - totalAplicado)
@@ -385,10 +392,14 @@ export default function Paciente() {
     // e evita descontar antes da hora (paciente pagou mas ainda não veio tomar).
     const jaEstavaAplicada = !!existing?.data_aplicacao
     if (!jaEstavaAplicada && payload.data_aplicacao && payload.dose_mg) {
-      const medIdDaCompra = purchases.find((p) => p.medicamento_id)?.medicamento_id
-      if (medIdDaCompra) {
+      // Dose aplicada aqui é sempre do protocolo semanal (Tirzepatida) --
+      // nunca inferir pela ordem das compras do paciente (bug real: podia
+      // descontar o estoque de uma medicação diferente, tipo Vitamina D,
+      // se ela aparecesse antes no array).
+      const medIdPrincipal = medicamentoPrincipal?.id
+      if (medIdPrincipal) {
         await supabase.rpc('descontar_estoque_medicamento', {
-          p_medicamento_id: medIdDaCompra,
+          p_medicamento_id: medIdPrincipal,
           p_quantidade_mg: Number(payload.dose_mg),
         })
         const { data: medUpdated } = await supabase.from('pronutro_medicamentos').select('*').order('nome')

@@ -63,6 +63,8 @@ export interface Medicamento {
   created_at: string
   updated_at: string
   custo_mg: number | null
+  is_principal: boolean
+  estoque_minimo: number | null
 }
 
 export interface Bioimpedancia {
