@@ -62,6 +62,39 @@ export interface Pagamento {
   medicamento_id: string | null
   quantidade_mg: number | null
   medico_id: string | null
+  procedimento_id: string | null
+  data_atendimento: string | null
+  bandeira: string | null
+  banco_operadora: string | null
+  taxa_cartao: number | null
+  valor_liquido: number | null
+  data_deposito: string | null
+  status_recebimento: 'pendente' | 'a_receber' | 'recebido' | 'cancelado' | 'estornado' | 'divergente' | null
+  indicacao: string | null
+  nf_numero: string | null
+  nf_valor: number | null
+  imposto: number | null
+  custo_clinica: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Procedimento {
+  id: string
+  nome: string
+  categoria: string
+  valor_padrao: number | null
+  ativo: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface Meta {
+  id: string
+  mes: string
+  medico_id: string | null
+  procedimento_id: string | null
+  valor_meta: number
   created_at: string
   updated_at: string
 }

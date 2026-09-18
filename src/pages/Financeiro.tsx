@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useIsAdmin } from '../hooks/useIsAdmin'
-import type { Pagamento, Patient, Medicamento, Medico } from '../types'
+import type { Pagamento, Patient, Medicamento, Medico, Procedimento, Meta } from '../types'
 import { format, subMonths } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
@@ -33,6 +33,28 @@ const REFERENTES = [
   { value: 'outro', label: 'Outro' },
 ]
 
+const CATEGORIAS_PROCEDIMENTO = [
+  { value: 'consulta', label: 'Consulta' },
+  { value: 'procedimento', label: 'Procedimento' },
+  { value: 'tratamento', label: 'Tratamento' },
+  { value: 'aplicacao', label: 'Aplicação' },
+  { value: 'produto', label: 'Produto' },
+  { value: 'outro', label: 'Outro' },
+]
+
+const BANDEIRAS = ['Visa', 'Mastercard', 'Elo', 'Amex', 'Hipercard', 'Outra']
+
+const STATUS_RECEBIMENTO = [
+  { value: 'pendente', label: 'Pendente' },
+  { value: 'a_receber', label: 'A receber' },
+  { value: 'recebido', label: 'Recebido' },
+  { value: 'cancelado', label: 'Cancelado' },
+  { value: 'estornado', label: 'Estornado' },
+  { value: 'divergente', label: 'Divergente' },
+]
+
+const usaCartao = (forma: string) => forma === 'cartao_credito' || forma === 'cartao_debito'
+
 function fmtMoney(n: number) {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
@@ -44,14 +66,27 @@ export default function Financeiro() {
   const [patients, setPatients] = useState<Patient[]>([])
   const [medicamentos, setMedicamentos] = useState<Medicamento[]>([])
   const [medicos, setMedicos] = useState<Medico[]>([])
+  const [procedimentos, setProcedimentos] = useState<Procedimento[]>([])
+  const [metas, setMetas] = useState<Meta[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [showEstoqueMed, setShowEstoqueMed] = useState(false)
   const [showMedicos, setShowMedicos] = useState(false)
+  const [showProcedimentos, setShowProcedimentos] = useState(false)
+  const [showMetas, setShowMetas] = useState(false)
   const [novoMedicoNome, setNovoMedicoNome] = useState('')
   const [novoMedicoRepasse, setNovoMedicoRepasse] = useState('')
   const [savingMedico, setSavingMedico] = useState(false)
   const [editandoRepasse, setEditandoRepasse] = useState<Record<string, string>>({})
+  const [novoProcNome, setNovoProcNome] = useState('')
+  const [novoProcCategoria, setNovoProcCategoria] = useState('procedimento')
+  const [novoProcValor, setNovoProcValor] = useState('')
+  const [savingProc, setSavingProc] = useState(false)
+  const [novaMetaMes, setNovaMetaMes] = useState(format(new Date(), 'yyyy-MM'))
+  const [novaMetaMedico, setNovaMetaMedico] = useState('')
+  const [novaMetaValor, setNovaMetaValor] = useState('')
+  const [savingMeta, setSavingMeta] = useState(false)
+  const [showDetalhesFinanceiros, setShowDetalhesFinanceiros] = useState(false)
   const [novoMedNome, setNovoMedNome] = useState('')
   const [novoMedEstoque, setNovoMedEstoque] = useState('')
   const [novoMedCusto, setNovoMedCusto] = useState('')
@@ -68,31 +103,48 @@ export default function Financeiro() {
   const [showPatientDropdown, setShowPatientDropdown] = useState(false)
   const [showSearchDropdown, setShowSearchDropdown] = useState(false)
 
-  const [form, setForm] = useState({
+  const formInicial = {
     patient_id: '',
     valor: '',
     data_pagamento: format(new Date(), 'yyyy-MM-dd'),
+    data_atendimento: format(new Date(), 'yyyy-MM-dd'),
     forma_pagamento: 'pix',
     referente_a: 'consulta',
+    procedimento_id: '',
     status: 'pago' as 'pago' | 'pendente' | 'cancelado',
     observacoes: '',
     medicamento_id: '',
     quantidade_mg: '',
     medico_id: '',
-  })
+    bandeira: '',
+    banco_operadora: '',
+    taxa_cartao: '',
+    data_deposito: '',
+    status_recebimento: '',
+    indicacao: '',
+    nf_numero: '',
+    nf_valor: '',
+    imposto: '',
+    custo_clinica: '',
+  }
+  const [form, setForm] = useState(formInicial)
 
   async function load() {
     setLoading(true)
-    const [{ data: pags }, { data: pts }, { data: meds }, { data: docs }] = await Promise.all([
+    const [{ data: pags }, { data: pts }, { data: meds }, { data: docs }, { data: procs }, { data: mts }] = await Promise.all([
       supabase.from('pronutro_pagamentos').select('*').order('data_pagamento', { ascending: false }),
       supabase.from('pronutro_patients').select('*').order('nome'),
       supabase.from('pronutro_medicamentos').select('*').order('nome'),
       supabase.from('pronutro_medicos').select('*').order('nome'),
+      supabase.from('pronutro_procedimentos').select('*').order('nome'),
+      supabase.from('pronutro_metas').select('*').order('mes', { ascending: false }),
     ])
     const patientsList = pts ?? []
     setPatients(patientsList)
     setMedicamentos(meds ?? [])
     setMedicos(docs ?? [])
+    setProcedimentos(procs ?? [])
+    setMetas(mts ?? [])
     setPagamentos(
       (pags ?? []).map((p) => ({
         ...p,
@@ -124,18 +176,34 @@ export default function Financeiro() {
     }
     setSaving(true)
     const quantidadeMg = form.quantidade_mg ? Number(form.quantidade_mg.replace(',', '.')) : null
+    const valorNum = Number(form.valor.replace(',', '.'))
+    const taxaCartaoNum = form.taxa_cartao ? Number(form.taxa_cartao.replace(',', '.')) : null
+    const valorLiquido = taxaCartaoNum != null ? round2(valorNum - taxaCartaoNum) : null
 
     const { error } = await supabase.from('pronutro_pagamentos').insert({
       patient_id: form.patient_id,
-      valor: Number(form.valor.replace(',', '.')),
+      valor: valorNum,
       data_pagamento: form.data_pagamento,
+      data_atendimento: form.data_atendimento || form.data_pagamento,
       forma_pagamento: form.forma_pagamento,
       referente_a: form.referente_a,
+      procedimento_id: form.procedimento_id || null,
       status: form.status,
       observacoes: form.observacoes || null,
       medicamento_id: form.medicamento_id || null,
       quantidade_mg: quantidadeMg,
       medico_id: form.medico_id || null,
+      bandeira: form.bandeira || null,
+      banco_operadora: form.banco_operadora || null,
+      taxa_cartao: taxaCartaoNum,
+      valor_liquido: valorLiquido,
+      data_deposito: form.data_deposito || null,
+      status_recebimento: form.status_recebimento || null,
+      indicacao: form.indicacao || null,
+      nf_numero: form.nf_numero || null,
+      nf_valor: form.nf_valor ? Number(form.nf_valor.replace(',', '.')) : null,
+      imposto: form.imposto ? Number(form.imposto.replace(',', '.')) : null,
+      custo_clinica: form.custo_clinica ? Number(form.custo_clinica.replace(',', '.')) : null,
     })
     if (error) {
       setSaving(false)
@@ -163,11 +231,7 @@ export default function Financeiro() {
     }
 
     setSaving(false)
-    setForm({
-      patient_id: '', valor: '', data_pagamento: format(new Date(), 'yyyy-MM-dd'),
-      forma_pagamento: 'pix', referente_a: 'consulta', status: 'pago', observacoes: '',
-      medicamento_id: '', quantidade_mg: '', medico_id: '',
-    })
+    setForm(formInicial)
     setPatientSearch('')
     setShowForm(false)
     load()
@@ -249,6 +313,48 @@ export default function Financeiro() {
       return
     }
     setEditandoRepasse((c) => { const next = { ...c }; delete next[medId]; return next })
+    load()
+  }
+
+  async function saveProcedimento() {
+    if (!novoProcNome.trim()) return
+    setSavingProc(true)
+    const { error } = await supabase.from('pronutro_procedimentos').insert({
+      nome: novoProcNome.trim(),
+      categoria: novoProcCategoria,
+      valor_padrao: novoProcValor ? Number(novoProcValor.replace(',', '.')) : null,
+    })
+    setSavingProc(false)
+    if (error) {
+      alert('Erro ao cadastrar procedimento: ' + error.message)
+      return
+    }
+    setNovoProcNome('')
+    setNovoProcValor('')
+    load()
+  }
+
+  async function saveMeta() {
+    if (!novaMetaMes || !novaMetaValor) return
+    setSavingMeta(true)
+    const { error } = await supabase.from('pronutro_metas').upsert({
+      mes: novaMetaMes,
+      medico_id: novaMetaMedico || null,
+      procedimento_id: null,
+      valor_meta: Number(novaMetaValor.replace(',', '.')),
+    }, { onConflict: 'mes,medico_id,procedimento_id' })
+    setSavingMeta(false)
+    if (error) {
+      alert('Erro ao salvar meta: ' + error.message)
+      return
+    }
+    setNovaMetaValor('')
+    load()
+  }
+
+  async function deletarMeta(id: string) {
+    if (!confirm('Remover esta meta?')) return
+    await supabase.from('pronutro_metas').delete().eq('id', id)
     load()
   }
 
@@ -337,6 +443,20 @@ export default function Financeiro() {
     .filter((m) => m.receita > 0 || m.mgVendido > 0)
     .sort((a, b) => b.receita - a.receita)
 
+  const mesAtualChave = format(new Date(), 'yyyy-MM')
+  const pagosMesAtual = pagos.filter((p) => p.data_pagamento.startsWith(mesAtualChave))
+  const metasDoMes = metas.filter((m) => m.mes === mesAtualChave)
+  const metaGeral = metasDoMes.find((m) => !m.medico_id)
+  const metaGeralRealizado = round2(pagosMesAtual.reduce((acc, p) => acc + Number(p.valor), 0))
+  const metasPorMedico = metasDoMes
+    .filter((m) => m.medico_id)
+    .map((m) => {
+      const medico = medicos.find((med) => med.id === m.medico_id)
+      const realizado = round2(pagosMesAtual.filter((p) => p.medico_id === m.medico_id).reduce((acc, p) => acc + Number(p.valor), 0))
+      const pct = m.valor_meta > 0 ? round2((realizado / m.valor_meta) * 100) : 0
+      return { id: m.id, nome: medico?.nome ?? '—', meta: m.valor_meta, realizado, diferenca: round2(realizado - m.valor_meta), pct }
+    })
+
   if (loadingAdmin) return <div className="py-12 text-center text-gray-400">Carregando...</div>
   if (!isAdmin) return <Navigate to="/" replace />
   if (loading) return <div className="py-12 text-center text-gray-400">Carregando...</div>
@@ -360,6 +480,12 @@ export default function Financeiro() {
           </button>
           <button onClick={() => setShowMedicos((v) => !v)} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors font-medium bg-white">
             👨‍⚕️ <span className="hidden sm:inline">Médicos e</span> Repasse
+          </button>
+          <button onClick={() => setShowProcedimentos((v) => !v)} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors font-medium bg-white">
+            📋 Procedimentos
+          </button>
+          <button onClick={() => setShowMetas((v) => !v)} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors font-medium bg-white">
+            🎯 Metas
           </button>
           <button
             onClick={() => setShowForm((v) => !v)}
@@ -498,6 +624,103 @@ export default function Financeiro() {
         </div>
       )}
 
+      {showProcedimentos && (
+        <div className="bg-white rounded-2xl border-2 border-blue-300 p-5 shadow-md space-y-4">
+          <h2 className="text-sm font-bold text-gray-700">📋 Procedimentos</h2>
+          {procedimentos.length === 0 ? (
+            <p className="text-sm text-gray-400">Nenhum procedimento cadastrado ainda.</p>
+          ) : (
+            <div className="space-y-2">
+              {procedimentos.map((proc) => (
+                <div key={proc.id} className="flex flex-wrap items-center justify-between gap-2 border border-gray-100 rounded-lg px-3 py-2 text-sm">
+                  <div>
+                    <span className="font-semibold text-gray-800">{proc.nome}</span>
+                    <span className="text-gray-400 mx-1.5">·</span>
+                    <span className="text-gray-500">{CATEGORIAS_PROCEDIMENTO.find((c) => c.value === proc.categoria)?.label ?? proc.categoria}</span>
+                    <span className="text-gray-400 mx-1.5">·</span>
+                    <span className="text-gray-500">{proc.valor_padrao != null ? fmtMoney(proc.valor_padrao) : 'sem valor padrão'}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="border-t border-gray-100 pt-3 flex flex-wrap items-end gap-2">
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Novo procedimento</label>
+              <input type="text" placeholder="Ex: Consulta inicial" value={novoProcNome}
+                onChange={(e) => setNovoProcNome(e.target.value)}
+                className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Categoria</label>
+              <select value={novoProcCategoria} onChange={(e) => setNovoProcCategoria(e.target.value)}
+                className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                {CATEGORIAS_PROCEDIMENTO.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Valor padrão (R$)</label>
+              <input type="text" placeholder="Opcional" value={novoProcValor}
+                onChange={(e) => setNovoProcValor(e.target.value)}
+                className="w-28 px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+            </div>
+            <button onClick={saveProcedimento} disabled={savingProc || !novoProcNome.trim()}
+              className="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50">
+              {savingProc ? 'Salvando...' : '+ Cadastrar'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showMetas && (
+        <div className="bg-white rounded-2xl border-2 border-blue-300 p-5 shadow-md space-y-4">
+          <h2 className="text-sm font-bold text-gray-700">🎯 Metas mensais</h2>
+          {metas.length === 0 ? (
+            <p className="text-sm text-gray-400">Nenhuma meta cadastrada ainda.</p>
+          ) : (
+            <div className="space-y-2">
+              {metas.map((m) => (
+                <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 border border-gray-100 rounded-lg px-3 py-2 text-sm">
+                  <div>
+                    <span className="font-semibold text-gray-800">{m.mes}</span>
+                    <span className="text-gray-400 mx-1.5">·</span>
+                    <span className="text-gray-600">{m.medico_id ? (medicos.find((med) => med.id === m.medico_id)?.nome ?? 'médico') : 'Clínica (geral)'}</span>
+                    <span className="text-gray-400 mx-1.5">·</span>
+                    <span className="text-gray-500">{fmtMoney(m.valor_meta)}</span>
+                  </div>
+                  <button onClick={() => deletarMeta(m.id)} className="text-xs text-red-400 hover:text-red-600">Remover</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="border-t border-gray-100 pt-3 flex flex-wrap items-end gap-2">
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Mês</label>
+              <input type="month" value={novaMetaMes} onChange={(e) => setNovaMetaMes(e.target.value)}
+                className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Médico (vazio = meta da clínica)</label>
+              <select value={novaMetaMedico} onChange={(e) => setNovaMetaMedico(e.target.value)}
+                className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                <option value="">Clínica (geral)</option>
+                {medicos.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Valor da meta (R$)</label>
+              <input type="text" placeholder="Ex: 50000" value={novaMetaValor}
+                onChange={(e) => setNovaMetaValor(e.target.value)}
+                className="w-32 px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+            </div>
+            <button onClick={saveMeta} disabled={savingMeta || !novaMetaValor}
+              className="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50">
+              {savingMeta ? 'Salvando...' : '+ Salvar meta'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center shadow-sm">
@@ -509,6 +732,40 @@ export default function Financeiro() {
           <div className="text-xs text-amber-600 mt-0.5">Pendente (filtro atual)</div>
         </div>
       </div>
+
+      {/* Meta x Realizado do mês atual */}
+      {(metaGeral || metasPorMedico.length > 0) && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <h2 className="font-bold text-gray-800 mb-3">🎯 Meta x Realizado — {format(new Date(), 'MMMM/yyyy', { locale: ptBR })}</h2>
+          <div className="space-y-3">
+            {metaGeral && (() => {
+              const pct = metaGeral.valor_meta > 0 ? round2((metaGeralRealizado / metaGeral.valor_meta) * 100) : 0
+              return (
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="font-medium text-gray-700">Clínica (geral)</span>
+                    <span className="text-gray-500">{fmtMoney(metaGeralRealizado)} / {fmtMoney(metaGeral.valor_meta)} · {pct}%</span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-2">
+                    <div className={`h-2 rounded-full ${pct >= 100 ? 'bg-green-500' : 'bg-brand'}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+                  </div>
+                </div>
+              )
+            })()}
+            {metasPorMedico.map((m) => (
+              <div key={m.id}>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="font-medium text-gray-700">{m.nome}</span>
+                  <span className="text-gray-500">{fmtMoney(m.realizado)} / {fmtMoney(m.meta)} · {m.pct}%</span>
+                </div>
+                <div className="w-full bg-gray-100 rounded-full h-2">
+                  <div className={`h-2 rounded-full ${m.pct >= 100 ? 'bg-green-500' : 'bg-brand'}`} style={{ width: `${Math.min(m.pct, 100)}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Visão geral: tendência de receita + margem por medicação */}
       <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-6">
@@ -671,6 +928,18 @@ export default function Financeiro() {
               </select>
             </div>
             <div>
+              <label className="text-xs text-gray-500 block mb-1">Procedimento (opcional)</label>
+              <select value={form.procedimento_id} onChange={(e) => {
+                const procId = e.target.value
+                const proc = procedimentos.find((p) => p.id === procId)
+                setForm((f) => ({ ...f, procedimento_id: procId, valor: !f.valor && proc?.valor_padrao != null ? String(proc.valor_padrao) : f.valor }))
+              }}
+                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                <option value="">Nenhum</option>
+                {procedimentos.filter((p) => p.ativo).map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+              </select>
+            </div>
+            <div>
               <label className="text-xs text-gray-500 block mb-1">Medicação (opcional)</label>
               <select value={form.medicamento_id} onChange={(e) => setForm((f) => ({ ...f, medicamento_id: e.target.value }))}
                 className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand">
@@ -703,6 +972,96 @@ export default function Financeiro() {
                 className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
             </div>
           </div>
+
+          <button type="button" onClick={() => setShowDetalhesFinanceiros((v) => !v)}
+            className="text-xs font-medium text-brand hover:underline">
+            {showDetalhesFinanceiros ? '− Ocultar' : '+ Mostrar'} detalhes financeiros (cartão/Stone, NF, imposto, meta)
+          </button>
+
+          {showDetalhesFinanceiros && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 border-t border-gray-100 pt-4">
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Data do atendimento</label>
+                <input type="date" value={form.data_atendimento}
+                  onChange={(e) => setForm((f) => ({ ...f, data_atendimento: e.target.value }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Indicação (quem indicou)</label>
+                <input type="text" placeholder="Opcional" value={form.indicacao}
+                  onChange={(e) => setForm((f) => ({ ...f, indicacao: e.target.value }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+              </div>
+              {usaCartao(form.forma_pagamento) && (
+                <>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Bandeira</label>
+                    <select value={form.bandeira} onChange={(e) => setForm((f) => ({ ...f, bandeira: e.target.value }))}
+                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                      <option value="">Selecione</option>
+                      {BANDEIRAS.map((b) => <option key={b} value={b}>{b}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Banco/Operadora</label>
+                    <input type="text" placeholder="Ex: Stone, Cielo..." value={form.banco_operadora}
+                      onChange={(e) => setForm((f) => ({ ...f, banco_operadora: e.target.value }))}
+                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Taxa cartão (R$)</label>
+                    <input type="text" placeholder="Ex: 8,90" value={form.taxa_cartao}
+                      onChange={(e) => setForm((f) => ({ ...f, taxa_cartao: e.target.value }))}
+                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+                    {form.valor && form.taxa_cartao && (
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        Líquido: {fmtMoney(round2(Number(form.valor.replace(',', '.')) - Number(form.taxa_cartao.replace(',', '.'))))}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Data do depósito</label>
+                    <input type="date" value={form.data_deposito}
+                      onChange={(e) => setForm((f) => ({ ...f, data_deposito: e.target.value }))}
+                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Status do recebimento</label>
+                    <select value={form.status_recebimento} onChange={(e) => setForm((f) => ({ ...f, status_recebimento: e.target.value }))}
+                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                      <option value="">Selecione</option>
+                      {STATUS_RECEBIMENTO.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
+                  </div>
+                </>
+              )}
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">NF nº</label>
+                <input type="text" placeholder="Opcional" value={form.nf_numero}
+                  onChange={(e) => setForm((f) => ({ ...f, nf_numero: e.target.value }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">NF valor (R$)</label>
+                <input type="text" placeholder="Opcional" value={form.nf_valor}
+                  onChange={(e) => setForm((f) => ({ ...f, nf_valor: e.target.value }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Imposto (R$)</label>
+                <input type="text" placeholder="Opcional" value={form.imposto}
+                  onChange={(e) => setForm((f) => ({ ...f, imposto: e.target.value }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Custo clínica manual (R$)</label>
+                <input type="text" placeholder="Opcional" value={form.custo_clinica}
+                  onChange={(e) => setForm((f) => ({ ...f, custo_clinica: e.target.value }))}
+                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-2">
             <button onClick={savePagamento} disabled={saving || !form.patient_id || !form.valor || !form.data_pagamento}
               className="bg-brand text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-dark transition-colors disabled:opacity-50">
