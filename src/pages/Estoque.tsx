@@ -30,6 +30,8 @@ export default function Estoque() {
   const [savingAlerta, setSavingAlerta] = useState<string | null>(null)
   const [alertaForm, setAlertaForm] = useState<Record<string, string>>({})
   const [purchaseForm, setPurchaseForm] = useState({ medicamento_id: '', data_compra: '', quantidade: '', lote: '', observacoes: '' })
+  const [ajusteSaldo, setAjusteSaldo] = useState<Record<string, string>>({})
+  const [savingAjuste, setSavingAjuste] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -61,13 +63,21 @@ export default function Estoque() {
   // Um bloco de números por medicamento — nunca somar quantidade de
   // medicamentos diferentes (bug antigo: mg de Tirzepatida + unidade de
   // Vitamina D viravam um único "saldo" sem sentido).
+  //
+  // O "Saldo" é sempre pronutro_medicamentos.estoque_mg -- é o único contador
+  // que já é debitado automaticamente quando uma dose é aplicada (via RPC
+  // descontar_estoque_medicamento em Paciente.tsx). Comprado/Vendido aqui
+  // embaixo são só o HISTÓRICO de compras registradas (informativo) -- antes
+  // dessa correção o "Saldo" era recalculado só a partir desse histórico,
+  // ignorando o contador real, o que fazia aparecer "0" pra medicamento que
+  // tinha estoque inicial cadastrado direto (sem nenhuma compra registrada).
   const porMedicamento = medicamentos.map((med) => {
     const comprasDoMed = purchases.filter((p) => p.medicamento_id === med.id)
     const comprado = round2(comprasDoMed.filter((p) => !p.patient_id).reduce((acc, p) => acc + Number(p.quantidade_mg), 0))
     const alocadoPacientes = round2(comprasDoMed.filter((p) => !!p.patient_id).reduce((acc, p) => acc + Number(p.quantidade_mg), 0))
-    const saldo = round2(comprado - alocadoPacientes)
+    const saldo = round2(Number(med.estoque_mg))
     const alertaMinimo = Number(alertaForm[med.id] ?? med.estoque_minimo ?? (med.is_principal ? config?.estoque_alerta_mg ?? 50 : 0))
-    return { med, comprasDoMed, comprado, alocadoPacientes, saldo, alertaMinimo, emAlerta: saldo <= alertaMinimo }
+    return { med, comprasDoMed, comprado, alocadoPacientes, saldo, alertaMinimo, emAlerta: saldo <= alertaMinimo, negativo: saldo < 0 }
   })
 
   // Previsão da semana só existe pro medicamento principal — é o único que
@@ -90,13 +100,21 @@ export default function Estoque() {
   async function savePurchase() {
     if (!purchaseForm.medicamento_id || !purchaseForm.quantidade || !purchaseForm.data_compra) return
     setSavingPurchase(true)
+    const quantidade = Number(purchaseForm.quantidade)
     await supabase.from('pronutro_purchases').insert({
       patient_id: null,
       medicamento_id: purchaseForm.medicamento_id,
       data_compra: purchaseForm.data_compra,
-      quantidade_mg: Number(purchaseForm.quantidade),
+      quantidade_mg: quantidade,
       lote: purchaseForm.lote || null,
       observacoes: purchaseForm.observacoes || null,
+    })
+    // Credita o contador real (mesmo usado no Financeiro e debitado na
+    // aplicação de dose) -- sem isso o histórico de compra fica registrado
+    // mas o saldo real nunca sobe, só desce.
+    await supabase.rpc('descontar_estoque_medicamento', {
+      p_medicamento_id: purchaseForm.medicamento_id,
+      p_quantidade_mg: -quantidade,
     })
     setPurchaseForm((f) => ({ ...f, data_compra: '', quantidade: '', lote: '', observacoes: '' }))
     setSavingPurchase(false)
@@ -107,6 +125,18 @@ export default function Estoque() {
     if (!confirm('Remover esta entrada de estoque?')) return
     await supabase.from('pronutro_purchases').delete().eq('id', id)
     setPurchases(prev => prev.filter(p => p.id !== id))
+  }
+
+  async function corrigirSaldo(medId: string) {
+    const valor = ajusteSaldo[medId]
+    if (!valor) return
+    const delta = Number(valor.replace(',', '.'))
+    if (Number.isNaN(delta) || delta === 0) return
+    setSavingAjuste(medId)
+    await supabase.rpc('descontar_estoque_medicamento', { p_medicamento_id: medId, p_quantidade_mg: -delta })
+    setAjusteSaldo((a) => ({ ...a, [medId]: '' }))
+    setSavingAjuste(null)
+    load()
   }
 
   async function saveAlerta(medId: string) {
@@ -144,7 +174,7 @@ export default function Estoque() {
 
       {/* Um cartão por medicamento */}
       <div className="space-y-3">
-        {porMedicamento.map(({ med, comprado, alocadoPacientes, saldo, emAlerta }) => (
+        {porMedicamento.map(({ med, comprado, alocadoPacientes, saldo, emAlerta, negativo }) => (
           <div key={med.id} className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-bold text-gray-700">
@@ -152,17 +182,32 @@ export default function Estoque() {
               </h2>
               {emAlerta && <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">Estoque baixo</span>}
             </div>
+            {negativo && (
+              <div className="mb-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700 flex flex-wrap items-center gap-2">
+                <span>⚠️ Saldo negativo — foi debitado mais do que entrou no sistema. Faça uma contagem física e corrija:</span>
+                <input
+                  type="text" placeholder="+/- valor"
+                  value={ajusteSaldo[med.id] ?? ''}
+                  onChange={(e) => setAjusteSaldo((a) => ({ ...a, [med.id]: e.target.value }))}
+                  className="w-24 px-2 py-1 border border-red-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-red-400"
+                />
+                <button onClick={() => corrigirSaldo(med.id)} disabled={savingAjuste === med.id}
+                  className="text-xs font-semibold text-red-700 hover:underline disabled:opacity-50">
+                  {savingAjuste === med.id ? 'Salvando...' : 'Corrigir saldo'}
+                </button>
+              </div>
+            )}
             <div className="grid grid-cols-3 gap-2 sm:gap-3">
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
-                <p className="text-xs text-blue-500 font-medium mb-1">Comprado (fornecedor)</p>
+                <p className="text-xs text-blue-500 font-medium mb-1">Comprado (histórico)</p>
                 <p className="text-base sm:text-xl font-bold text-blue-700">{comprado} {med.is_principal ? 'mg' : 'un'}</p>
               </div>
               <div className="bg-orange-50 border border-orange-100 rounded-xl p-3 text-center">
-                <p className="text-xs text-orange-500 font-medium mb-1">Vendido a pacientes</p>
+                <p className="text-xs text-orange-500 font-medium mb-1">Vendido a pacientes (histórico)</p>
                 <p className="text-base sm:text-xl font-bold text-orange-700">{alocadoPacientes} {med.is_principal ? 'mg' : 'un'}</p>
               </div>
               <div className={`border rounded-xl p-3 text-center ${emAlerta ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-100'}`}>
-                <p className={`text-xs font-medium mb-1 ${emAlerta ? 'text-red-500' : 'text-green-500'}`}>Saldo</p>
+                <p className={`text-xs font-medium mb-1 ${emAlerta ? 'text-red-500' : 'text-green-500'}`}>Saldo atual</p>
                 <p className={`text-base sm:text-xl font-bold ${emAlerta ? 'text-red-700' : 'text-green-700'}`}>{saldo} {med.is_principal ? 'mg' : 'un'}</p>
               </div>
             </div>

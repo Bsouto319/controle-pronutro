@@ -12,6 +12,8 @@ export default function NovoPaciente() {
   const [success, setSuccess] = useState('')
   const [medicos, setMedicos] = useState<Medico[]>([])
 
+  const [enviarContrato, setEnviarContrato] = useState(true)
+
   const [form, setForm] = useState({
     nome: '',
     cpf: '',
@@ -85,16 +87,22 @@ export default function NovoPaciente() {
     }
 
     const contractUrl = `https://controle-pronutro.vercel.app/contrato/${contract.token}`
-    await supabase.functions.invoke('send-contract-email', {
-      body: {
-        patient_name: patient.nome,
-        patient_email: patient.email,
-        patient_phone: patient.telefone,
-        contract_url: contractUrl,
-      },
-    })
+    if (enviarContrato) {
+      await supabase.functions.invoke('send-contract-email', {
+        body: {
+          patient_name: patient.nome,
+          patient_email: patient.email,
+          patient_phone: patient.telefone,
+          contract_url: contractUrl,
+        },
+      })
+    }
 
-    setSuccess(`Paciente cadastrado! Contrato enviado para ${patient.email}`)
+    setSuccess(
+      enviarContrato
+        ? `Paciente cadastrado! Contrato enviado para ${patient.email}`
+        : 'Paciente cadastrado! Contrato NÃO enviado agora — use "Reenviar por email" na ficha do paciente quando quiser mandar.'
+    )
     setLoading(false)
     setTimeout(() => navigate(`/paciente/${patient.id}`), 2000)
   }
@@ -206,6 +214,23 @@ export default function NovoPaciente() {
           </div>
         </div>
 
+        {/* Contrato */}
+        <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={enviarContrato}
+              onChange={(e) => setEnviarContrato(e.target.checked)}
+              className="mt-0.5 w-4 h-4 accent-brand"
+            />
+            <span className="text-sm text-gray-700">
+              <span className="font-semibold">Enviar contrato (TCLE) por email/WhatsApp agora</span>
+              <br />
+              <span className="text-xs text-gray-400">Se desmarcar, o contrato é gerado mas não enviado — dá pra mandar depois na ficha do paciente, em "Reenviar por email".</span>
+            </span>
+          </label>
+        </div>
+
         {error && (
           <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
             <span>⚠️</span> {error}
@@ -235,8 +260,10 @@ export default function NovoPaciente() {
                 <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"/>
                 Cadastrando...
               </>
-            ) : (
+            ) : enviarContrato ? (
               '✓ Cadastrar e Enviar Contrato por Email'
+            ) : (
+              '✓ Cadastrar Paciente (sem enviar contrato)'
             )}
           </button>
         </div>
