@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useIsAdmin } from '../hooks/useIsAdmin'
-import type { Pagamento, Patient, Medicamento } from '../types'
+import type { Pagamento, Patient, Medicamento, Medico } from '../types'
 import { format, subMonths } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import ImportPagamentosCSVModal from '../components/ImportPagamentosCSVModal'
+import MedicoSelect from '../components/MedicoSelect'
 import { normalizeText } from '../lib/normalize'
 
 interface PagamentoComPaciente extends Pagamento {
@@ -42,9 +43,15 @@ export default function Financeiro() {
   const [pagamentos, setPagamentos] = useState<PagamentoComPaciente[]>([])
   const [patients, setPatients] = useState<Patient[]>([])
   const [medicamentos, setMedicamentos] = useState<Medicamento[]>([])
+  const [medicos, setMedicos] = useState<Medico[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [showEstoqueMed, setShowEstoqueMed] = useState(false)
+  const [showMedicos, setShowMedicos] = useState(false)
+  const [novoMedicoNome, setNovoMedicoNome] = useState('')
+  const [novoMedicoRepasse, setNovoMedicoRepasse] = useState('')
+  const [savingMedico, setSavingMedico] = useState(false)
+  const [editandoRepasse, setEditandoRepasse] = useState<Record<string, string>>({})
   const [novoMedNome, setNovoMedNome] = useState('')
   const [novoMedEstoque, setNovoMedEstoque] = useState('')
   const [novoMedCusto, setNovoMedCusto] = useState('')
@@ -71,18 +78,21 @@ export default function Financeiro() {
     observacoes: '',
     medicamento_id: '',
     quantidade_mg: '',
+    medico_id: '',
   })
 
   async function load() {
     setLoading(true)
-    const [{ data: pags }, { data: pts }, { data: meds }] = await Promise.all([
+    const [{ data: pags }, { data: pts }, { data: meds }, { data: docs }] = await Promise.all([
       supabase.from('pronutro_pagamentos').select('*').order('data_pagamento', { ascending: false }),
       supabase.from('pronutro_patients').select('*').order('nome'),
       supabase.from('pronutro_medicamentos').select('*').order('nome'),
+      supabase.from('pronutro_medicos').select('*').order('nome'),
     ])
     const patientsList = pts ?? []
     setPatients(patientsList)
     setMedicamentos(meds ?? [])
+    setMedicos(docs ?? [])
     setPagamentos(
       (pags ?? []).map((p) => ({
         ...p,
@@ -99,7 +109,7 @@ export default function Financeiro() {
     if (!pacienteId || patients.length === 0) return
     const p = patients.find((pt) => pt.id === pacienteId)
     if (!p) return
-    setForm((f) => ({ ...f, patient_id: p.id }))
+    setForm((f) => ({ ...f, patient_id: p.id, medico_id: p.medico_id ?? f.medico_id }))
     setPatientSearch(p.nome)
     setShowForm(true)
     setTimeout(() => document.getElementById('form-novo-pagamento')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
@@ -125,6 +135,7 @@ export default function Financeiro() {
       observacoes: form.observacoes || null,
       medicamento_id: form.medicamento_id || null,
       quantidade_mg: quantidadeMg,
+      medico_id: form.medico_id || null,
     })
     if (error) {
       setSaving(false)
@@ -155,7 +166,7 @@ export default function Financeiro() {
     setForm({
       patient_id: '', valor: '', data_pagamento: format(new Date(), 'yyyy-MM-dd'),
       forma_pagamento: 'pix', referente_a: 'consulta', status: 'pago', observacoes: '',
-      medicamento_id: '', quantidade_mg: '',
+      medicamento_id: '', quantidade_mg: '', medico_id: '',
     })
     setPatientSearch('')
     setShowForm(false)
@@ -208,6 +219,36 @@ export default function Financeiro() {
       return
     }
     setAjusteEstoque((a) => ({ ...a, [medId]: '' }))
+    load()
+  }
+
+  async function saveMedico() {
+    if (!novoMedicoNome.trim()) return
+    setSavingMedico(true)
+    const { error } = await supabase.from('pronutro_medicos').insert({
+      nome: novoMedicoNome.trim(),
+      percentual_repasse: novoMedicoRepasse ? Number(novoMedicoRepasse.replace(',', '.')) : null,
+    })
+    setSavingMedico(false)
+    if (error) {
+      alert('Erro ao cadastrar médico: ' + error.message)
+      return
+    }
+    setNovoMedicoNome('')
+    setNovoMedicoRepasse('')
+    load()
+  }
+
+  async function salvarRepasse(medId: string) {
+    const valor = editandoRepasse[medId]
+    if (valor === undefined) return
+    const pct = valor.trim() === '' ? null : Number(valor.replace(',', '.'))
+    const { error } = await supabase.from('pronutro_medicos').update({ percentual_repasse: pct }).eq('id', medId)
+    if (error) {
+      alert('Erro ao salvar percentual de repasse: ' + error.message)
+      return
+    }
+    setEditandoRepasse((c) => { const next = { ...c }; delete next[medId]; return next })
     load()
   }
 
@@ -269,6 +310,20 @@ export default function Financeiro() {
     return { mes: format(d, 'MMM/yy', { locale: ptBR }), receita: Math.round(total * 100) / 100 }
   })
 
+  const faturamentoPorMedico = medicos
+    .map((m) => {
+      const pagosDoMedico = pagos.filter((p) => p.medico_id === m.id)
+      const atendimentos = pagosDoMedico.length
+      const faturamento = pagosDoMedico.reduce((acc, p) => acc + Number(p.valor), 0)
+      const repasse = m.percentual_repasse != null ? round2(faturamento * (m.percentual_repasse / 100)) : null
+      const resultado = repasse != null ? round2(faturamento - repasse) : null
+      return { nome: m.nome, atendimentos, faturamento, repasse, resultado }
+    })
+    .filter((m) => m.atendimentos > 0)
+    .sort((a, b) => b.faturamento - a.faturamento)
+
+  function round2(n: number) { return Math.round(n * 100) / 100 }
+
   const margemPorMedicacao = medicamentos
     .map((m) => {
       const pagosDaMed = pagos.filter((p) => p.medicamento_id === m.id)
@@ -302,6 +357,9 @@ export default function Financeiro() {
           </button>
           <button onClick={() => setShowEstoqueMed((v) => !v)} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors font-medium bg-white">
             💊 <span className="hidden sm:inline">Estoque</span> Medicações
+          </button>
+          <button onClick={() => setShowMedicos((v) => !v)} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors font-medium bg-white">
+            👨‍⚕️ <span className="hidden sm:inline">Médicos e</span> Repasse
           </button>
           <button
             onClick={() => setShowForm((v) => !v)}
@@ -389,6 +447,57 @@ export default function Financeiro() {
         </div>
       )}
 
+      {showMedicos && (
+        <div className="bg-white rounded-2xl border-2 border-blue-300 p-5 shadow-md space-y-4">
+          <h2 className="text-sm font-bold text-gray-700">👨‍⚕️ Médicos e Percentual de Repasse</h2>
+          {medicos.length === 0 ? (
+            <p className="text-sm text-gray-400">Nenhum médico cadastrado ainda.</p>
+          ) : (
+            <div className="space-y-2">
+              {medicos.map((m) => (
+                <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 border border-gray-100 rounded-lg px-3 py-2 text-sm">
+                  <div>
+                    <span className="font-semibold text-gray-800">{m.nome}</span>
+                    <span className="text-gray-400 mx-1.5">·</span>
+                    <span className="text-gray-500">{m.percentual_repasse != null ? `${m.percentual_repasse}% de repasse` : 'sem % definido'}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      placeholder="% repasse"
+                      value={editandoRepasse[m.id] ?? (m.percentual_repasse != null ? String(m.percentual_repasse) : '')}
+                      onChange={(e) => setEditandoRepasse((c) => ({ ...c, [m.id]: e.target.value }))}
+                      className="w-24 px-2 py-1 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-brand"
+                    />
+                    <button onClick={() => salvarRepasse(m.id)} className="text-xs font-medium text-brand hover:underline">
+                      Salvar
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="border-t border-gray-100 pt-3 flex flex-wrap items-end gap-2">
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Novo médico</label>
+              <input type="text" placeholder="Ex: Dr. João" value={novoMedicoNome}
+                onChange={(e) => setNovoMedicoNome(e.target.value)}
+                className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">% de repasse</label>
+              <input type="text" placeholder="Opcional" value={novoMedicoRepasse}
+                onChange={(e) => setNovoMedicoRepasse(e.target.value)}
+                className="w-28 px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+            </div>
+            <button onClick={saveMedico} disabled={savingMedico || !novoMedicoNome.trim()}
+              className="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50">
+              {savingMedico ? 'Salvando...' : '+ Cadastrar'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center shadow-sm">
@@ -416,6 +525,39 @@ export default function Financeiro() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+
+        {faturamentoPorMedico.length > 0 && (
+          <div>
+            <h2 className="font-bold text-gray-800 mb-1">Faturamento por médico</h2>
+            <p className="text-xs text-gray-400 mb-3">Repasse calculado só pros médicos com % cadastrado (aba Médicos e Repasse).</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-gray-400 text-xs border-b border-gray-100">
+                    <th className="py-2 pr-4 font-medium">Médico</th>
+                    <th className="py-2 pr-4 font-medium">Atendimentos</th>
+                    <th className="py-2 pr-4 font-medium">Faturamento</th>
+                    <th className="py-2 pr-4 font-medium">Repasse</th>
+                    <th className="py-2 pr-4 font-medium">Resultado clínica</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {faturamentoPorMedico.map((m) => (
+                    <tr key={m.nome}>
+                      <td className="py-2 pr-4 font-medium text-gray-800">{m.nome}</td>
+                      <td className="py-2 pr-4 text-gray-600">{m.atendimentos}</td>
+                      <td className="py-2 pr-4 text-gray-700">{fmtMoney(m.faturamento)}</td>
+                      <td className="py-2 pr-4 text-gray-500">{m.repasse != null ? fmtMoney(m.repasse) : '—'}</td>
+                      <td className="py-2 pr-4 font-semibold">
+                        {m.resultado != null ? <span className="text-green-700">{fmtMoney(m.resultado)}</span> : <span className="text-gray-300">—</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {margemPorMedicacao.length > 0 && (
           <div>
@@ -480,7 +622,7 @@ export default function Financeiro() {
                       <button
                         key={p.id}
                         type="button"
-                        onClick={() => { setForm((f) => ({ ...f, patient_id: p.id })); setPatientSearch(p.nome); setShowPatientDropdown(false) }}
+                        onClick={() => { setForm((f) => ({ ...f, patient_id: p.id, medico_id: p.medico_id ?? f.medico_id })); setPatientSearch(p.nome); setShowPatientDropdown(false) }}
                         className="w-full text-left px-3 py-2 text-sm hover:bg-brand/10 transition-colors"
                       >
                         {p.nome}
@@ -511,6 +653,15 @@ export default function Financeiro() {
                 className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand">
                 {FORMAS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
               </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Médico (opcional)</label>
+              <MedicoSelect
+                medicos={medicos}
+                medicoId={form.medico_id}
+                onChange={(medicoId) => setForm((f) => ({ ...f, medico_id: medicoId }))}
+                onCreated={(m) => setMedicos((prev) => [...prev, m])}
+              />
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">Referente a</label>
@@ -591,7 +742,7 @@ export default function Financeiro() {
                       type="button"
                       onMouseDown={(e) => {
                         e.preventDefault()
-                        setForm((f) => ({ ...f, patient_id: p.id }))
+                        setForm((f) => ({ ...f, patient_id: p.id, medico_id: p.medico_id ?? f.medico_id }))
                         setPatientSearch(p.nome)
                         setShowForm(true)
                         setShowSearchDropdown(false)

@@ -4,10 +4,11 @@ import { supabase } from '../lib/supabase'
 import SignaturePad, { type SignaturePadHandle } from '../components/SignaturePad'
 import EvolucaoChart from '../components/EvolucaoChart'
 import { useIsAdmin } from '../hooks/useIsAdmin'
-import type { Patient, Contract, DoseRecord, Purchase, EvolucaoRecord, Bioimpedancia, Pagamento, Medicamento } from '../types'
+import type { Patient, Contract, DoseRecord, Purchase, EvolucaoRecord, Bioimpedancia, Pagamento, Medicamento, Medico } from '../types'
 import { isNoShowPendente } from '../lib/noShow'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import MedicoSelect from '../components/MedicoSelect'
 
 const FORMAS_PAGAMENTO: Record<string, string> = {
   pix: 'Pix', dinheiro: 'Dinheiro', cartao_credito: 'Cartão crédito', cartao_debito: 'Cartão débito',
@@ -59,6 +60,7 @@ export default function Paciente() {
   const [bioimpedancias, setBioimpedancias] = useState<Bioimpedancia[]>([])
   const [pagamentos, setPagamentos] = useState<Pagamento[]>([])
   const [medicamentos, setMedicamentos] = useState<Medicamento[]>([])
+  const [medicos, setMedicos] = useState<Medico[]>([])
   const [bioForm, setBioForm] = useState({ data_exame: '', observacoes: '' })
   const [bioFile, setBioFile] = useState<File | null>(null)
   const [savingBio, setSavingBio] = useState(false)
@@ -75,7 +77,7 @@ export default function Paciente() {
   const bioFileInputRef = useRef<HTMLInputElement>(null)
 
   async function loadData() {
-    const [{ data: p }, { data: c }, { data: d }, { data: pur }, { data: ev }, { data: bio }, { data: pag }, { data: meds }] = await Promise.all([
+    const [{ data: p }, { data: c }, { data: d }, { data: pur }, { data: ev }, { data: bio }, { data: pag }, { data: meds }, { data: docs }] = await Promise.all([
       supabase.from('pronutro_patients').select('*').eq('id', id).single(),
       supabase.from('pronutro_contracts').select('*').eq('patient_id', id).single(),
       supabase.from('pronutro_dose_records').select('*').eq('patient_id', id).order('semana'),
@@ -84,6 +86,7 @@ export default function Paciente() {
       supabase.from('pronutro_bioimpedancia').select('*').eq('patient_id', id).order('data_exame', { ascending: false }),
       supabase.from('pronutro_pagamentos').select('*').eq('patient_id', id).order('data_pagamento', { ascending: false }),
       supabase.from('pronutro_medicamentos').select('*').order('nome'),
+      supabase.from('pronutro_medicos').select('*').order('nome'),
     ])
     setPatient(p)
     setContract(c)
@@ -93,6 +96,7 @@ export default function Paciente() {
     setBioimpedancias(bio ?? [])
     setPagamentos(pag ?? [])
     setMedicamentos(meds ?? [])
+    setMedicos(docs ?? [])
 
     // Só a semana/formulário do ciclo em andamento — ciclos anteriores ficam só no histórico
     const cicloAtual = p?.ciclo_atual ?? 1
@@ -667,6 +671,7 @@ export default function Paciente() {
                   setEditForm({
                     nome: patient.nome, cpf: patient.cpf, email: patient.email,
                     telefone: patient.telefone, medico_prescritor: patient.medico_prescritor,
+                    medico_id: patient.medico_id,
                     dosagem_inicial_mg: patient.dosagem_inicial_mg, observacoes: patient.observacoes,
                   })
                   setEditingPatient(true)
@@ -758,10 +763,11 @@ export default function Paciente() {
               </div>
               <div>
                 <label className="text-xs text-gray-500 block mb-1">Médico prescritor</label>
-                <input
-                  value={editForm.medico_prescritor ?? ''}
-                  onChange={e => setEditForm(f => ({ ...f, medico_prescritor: e.target.value }))}
-                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                <MedicoSelect
+                  medicos={medicos}
+                  medicoId={editForm.medico_id ?? ''}
+                  onChange={(medicoId, nome) => setEditForm(f => ({ ...f, medico_id: medicoId, medico_prescritor: nome }))}
+                  onCreated={(m) => setMedicos((prev) => [...prev, m])}
                 />
               </div>
               <div>

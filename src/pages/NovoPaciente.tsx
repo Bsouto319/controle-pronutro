@@ -1,23 +1,36 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import ProNutroLogo from '../components/ProNutroLogo'
+import MedicoSelect from '../components/MedicoSelect'
+import type { Medico } from '../types'
 
 export default function NovoPaciente() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [medicos, setMedicos] = useState<Medico[]>([])
 
   const [form, setForm] = useState({
     nome: '',
     cpf: '',
     email: '',
     telefone: '',
-    medico_prescritor: 'Dra. Vanessa',
+    medico_id: '',
+    medico_prescritor: '',
     dosagem_inicial_mg: '',
     observacoes: '',
   })
+
+  useEffect(() => {
+    supabase.from('pronutro_medicos').select('*').order('nome').then(({ data }) => {
+      const list = data ?? []
+      setMedicos(list)
+      const padrao = list.find((m) => m.nome === 'Dra. Vanessa') ?? list[0]
+      if (padrao) setForm((f) => ({ ...f, medico_id: padrao.id, medico_prescritor: padrao.nome }))
+    })
+  }, [])
 
   const set = (field: string, value: string) =>
     setForm((f) => ({ ...f, [field]: value }))
@@ -45,6 +58,7 @@ export default function NovoPaciente() {
         cpf: form.cpf,
         email: form.email,
         telefone: form.telefone,
+        medico_id: form.medico_id || null,
         medico_prescritor: form.medico_prescritor,
         dosagem_inicial_mg: form.dosagem_inicial_mg ? Number(form.dosagem_inicial_mg) : null,
         observacoes: form.observacoes || null,
@@ -156,9 +170,11 @@ export default function NovoPaciente() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={labelCls}>Médico prescritor</label>
-              <input
-                value={form.medico_prescritor}
-                onChange={(e) => set('medico_prescritor', e.target.value)}
+              <MedicoSelect
+                medicos={medicos}
+                medicoId={form.medico_id}
+                onChange={(medicoId, nome) => setForm((f) => ({ ...f, medico_id: medicoId, medico_prescritor: nome }))}
+                onCreated={(m) => setMedicos((prev) => [...prev, m])}
                 className={inputCls}
               />
             </div>

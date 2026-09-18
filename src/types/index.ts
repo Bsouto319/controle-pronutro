@@ -5,6 +5,7 @@ export interface Patient {
   email: string
   telefone: string
   medico_prescritor: string
+  medico_id: string | null
   dosagem_inicial_mg: number | null
   observacoes: string | null
   ativo: boolean
@@ -14,6 +15,15 @@ export interface Patient {
   protocolo_confirmacao_enviado_em: string | null
   protocolo_confirmacao_respondido_em: string | null
   ciclo_atual: number
+}
+
+export interface Medico {
+  id: string
+  nome: string
+  percentual_repasse: number | null
+  ativo: boolean
+  created_at: string
+  updated_at: string
 }
 
 export interface Contract {
@@ -51,6 +61,7 @@ export interface Pagamento {
   observacoes: string | null
   medicamento_id: string | null
   quantidade_mg: number | null
+  medico_id: string | null
   created_at: string
   updated_at: string
 }
