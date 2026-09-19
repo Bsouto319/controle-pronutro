@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import ProNutroLogo from '../components/ProNutroLogo'
 import MedicoSelect from '../components/MedicoSelect'
-import type { Medico } from '../types'
+import type { Medico, Medicamento } from '../types'
 
 export default function NovoPaciente() {
   const navigate = useNavigate()
@@ -11,6 +11,8 @@ export default function NovoPaciente() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [medicos, setMedicos] = useState<Medico[]>([])
+  const [medicamentos, setMedicamentos] = useState<Medicamento[]>([])
+  const [medicamentoId, setMedicamentoId] = useState('')
 
   const [enviarContrato, setEnviarContrato] = useState(true)
 
@@ -32,7 +34,21 @@ export default function NovoPaciente() {
       const padrao = list.find((m) => m.nome === 'Dra. Vanessa') ?? list[0]
       if (padrao) setForm((f) => ({ ...f, medico_id: padrao.id, medico_prescritor: padrao.nome }))
     })
+    supabase.from('pronutro_medicamentos').select('*').eq('ativo', true).order('nome').then(({ data }) => {
+      const list = data ?? []
+      setMedicamentos(list)
+      const principal = list.find((m) => m.is_principal) ?? list[0]
+      if (principal) setMedicamentoId(principal.id)
+    })
   }, [])
+
+  // Contrato TCLE (envio automático) é só do protocolo de Tirzepatida -- equipe
+  // passou a usar o cadastro pra outros medicamentos (implantes, suplementos)
+  // que não têm esse termo específico. Sem essa trava, mandaria o TCLE errado
+  // pra paciente que nem começou tirzepatida.
+  const medicamentoSelecionado = medicamentos.find((m) => m.id === medicamentoId) ?? null
+  const isTirzepatida = medicamentoSelecionado?.is_principal ?? true
+  const contratoSeraEnviado = isTirzepatida && enviarContrato
 
   const set = (field: string, value: string) =>
     setForm((f) => ({ ...f, [field]: value }))
@@ -87,7 +103,7 @@ export default function NovoPaciente() {
     }
 
     const contractUrl = `https://controle-pronutro.vercel.app/contrato/${contract.token}`
-    if (enviarContrato) {
+    if (contratoSeraEnviado) {
       await supabase.functions.invoke('send-contract-email', {
         body: {
           patient_name: patient.nome,
@@ -99,9 +115,11 @@ export default function NovoPaciente() {
     }
 
     setSuccess(
-      enviarContrato
+      contratoSeraEnviado
         ? `Paciente cadastrado! Contrato enviado para ${patient.email}`
-        : 'Paciente cadastrado! Contrato NÃO enviado agora — use "Reenviar por email" na ficha do paciente quando quiser mandar.'
+        : isTirzepatida
+        ? 'Paciente cadastrado! Contrato NÃO enviado agora — use "Reenviar por email" na ficha do paciente quando quiser mandar.'
+        : `Paciente cadastrado! Contrato gerado mas não enviado automaticamente (TCLE é só pra protocolo de Tirzepatida) — use "Reenviar por email" na ficha do paciente se precisar mandar.`
     )
     setLoading(false)
     setTimeout(() => navigate(`/paciente/${patient.id}`), 2000)
@@ -187,6 +205,12 @@ export default function NovoPaciente() {
               />
             </div>
             <div>
+              <label className={labelCls}>Medicamento inicial</label>
+              <select value={medicamentoId} onChange={(e) => setMedicamentoId(e.target.value)} className={inputCls}>
+                {medicamentos.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
+              </select>
+            </div>
+            <div>
               <label className={labelCls}>Dosagem inicial (mg)</label>
               <div className="relative">
                 <input
@@ -216,19 +240,29 @@ export default function NovoPaciente() {
 
         {/* Contrato */}
         <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={enviarContrato}
-              onChange={(e) => setEnviarContrato(e.target.checked)}
-              className="mt-0.5 w-4 h-4 accent-brand"
-            />
-            <span className="text-sm text-gray-700">
-              <span className="font-semibold">Enviar contrato (TCLE) por email/WhatsApp agora</span>
+          {isTirzepatida ? (
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={enviarContrato}
+                onChange={(e) => setEnviarContrato(e.target.checked)}
+                className="mt-0.5 w-4 h-4 accent-brand"
+              />
+              <span className="text-sm text-gray-700">
+                <span className="font-semibold">Enviar contrato (TCLE) por email/WhatsApp agora</span>
+                <br />
+                <span className="text-xs text-gray-400">Se desmarcar, o contrato é gerado mas não enviado — dá pra mandar depois na ficha do paciente, em "Reenviar por email".</span>
+              </span>
+            </label>
+          ) : (
+            <p className="text-sm text-gray-500">
+              <span className="font-semibold text-gray-600">Contrato gerado, mas não enviado automaticamente</span>
               <br />
-              <span className="text-xs text-gray-400">Se desmarcar, o contrato é gerado mas não enviado — dá pra mandar depois na ficha do paciente, em "Reenviar por email".</span>
-            </span>
-          </label>
+              <span className="text-xs text-gray-400">
+                O envio automático do TCLE é só pro protocolo de Tirzepatida. Pra {medicamentoSelecionado?.nome ?? 'este medicamento'}, o contrato fica disponível na ficha do paciente em "Reenviar por email" caso precise mandar manualmente.
+              </span>
+            </p>
+          )}
         </div>
 
         {error && (
@@ -260,7 +294,7 @@ export default function NovoPaciente() {
                 <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"/>
                 Cadastrando...
               </>
-            ) : enviarContrato ? (
+            ) : contratoSeraEnviado ? (
               '✓ Cadastrar e Enviar Contrato por Email'
             ) : (
               '✓ Cadastrar Paciente (sem enviar contrato)'
