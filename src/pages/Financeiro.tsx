@@ -74,6 +74,7 @@ export default function Financeiro() {
   const [showMedicos, setShowMedicos] = useState(false)
   const [showProcedimentos, setShowProcedimentos] = useState(false)
   const [showMetas, setShowMetas] = useState(false)
+  const [showAjuda, setShowAjuda] = useState(false)
   const [novoMedicoNome, setNovoMedicoNome] = useState('')
   const [novoMedicoRepasse, setNovoMedicoRepasse] = useState('')
   const [savingMedico, setSavingMedico] = useState(false)
@@ -565,6 +566,9 @@ export default function Financeiro() {
           <button onClick={() => setShowMetas((v) => !v)} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors font-medium bg-white">
             🎯 Metas
           </button>
+          <button onClick={() => setShowAjuda((v) => !v)} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors font-medium bg-white">
+            ❓ Ajuda
+          </button>
           <button
             onClick={() => setShowForm((v) => !v)}
             className="flex items-center gap-1.5 bg-brand text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-brand-dark transition-colors shadow-sm"
@@ -573,6 +577,42 @@ export default function Financeiro() {
           </button>
         </div>
       </div>
+
+      {showAjuda && (
+        <div className="bg-white rounded-2xl border-2 border-blue-300 p-5 shadow-md space-y-4 text-sm text-gray-700">
+          <h2 className="text-sm font-bold text-gray-700">❓ Guia — Paciente, Médico e Medicação</h2>
+
+          <div>
+            <p className="font-semibold text-gray-800 mb-1">👤 Paciente</p>
+            <ul className="list-disc list-inside space-y-0.5 text-gray-600">
+              <li><strong>Adicionar</strong>: menu "+ Novo Paciente" → preenche os dados → "Cadastrar". Se o CPF já existir, o sistema avisa e mostra a ficha existente em vez de deixar duplicar.</li>
+              <li><strong>Editar</strong>: abre a ficha do paciente → botão "✏️ Editar" → muda o que precisar → salva.</li>
+              <li><strong>Excluir/Inativar</strong>: na ficha do paciente, botão "Inativar" (recomendado — some da lista ativa mas guarda todo o histórico) ou "Apagar" (apaga tudo permanentemente — só usar se foi cadastro por engano, sem nenhuma dose/pagamento real lançado).</li>
+            </ul>
+          </div>
+
+          <div>
+            <p className="font-semibold text-gray-800 mb-1">👨‍⚕️ Médico</p>
+            <ul className="list-disc list-inside space-y-0.5 text-gray-600">
+              <li><strong>Adicionar</strong>: aba "Médicos e Repasse" acima → campo "Novo médico" → nome → "+ Cadastrar".</li>
+              <li><strong>Editar nome</strong>: muda o texto direto no campo do nome, na lista → aparece "Salvar nome" → clica.</li>
+              <li><strong>Editar % de repasse</strong>: campo "% repasse" ao lado do nome → "Salvar".</li>
+              <li><strong>Excluir</strong>: botão "Excluir" na linha do médico. Se ele já tiver paciente/pagamento/meta vinculado, o sistema bloqueia e sugere "Desativar" em vez de apagar (preserva o histórico de quem já foi atendido).</li>
+            </ul>
+          </div>
+
+          <div>
+            <p className="font-semibold text-gray-800 mb-1">💊 Medicação</p>
+            <ul className="list-disc list-inside space-y-0.5 text-gray-600">
+              <li><strong>Adicionar</strong>: aba "Estoque de Medicações" acima → "Nova medicação" → nome + estoque inicial + custo → "+ Cadastrar".</li>
+              <li><strong>Editar nome</strong>: muda o texto no campo do nome, na lista → "Salvar nome".</li>
+              <li><strong>Editar valor/custo</strong>: campo "custo R$/mg" → novo valor → "Salvar custo".</li>
+              <li><strong>Ajustar estoque</strong>: campo "+/- mg" → "Ajustar" (soma ou subtrai do saldo atual).</li>
+              <li><strong>Excluir</strong>: botão "Excluir" na linha da medicação. Se já tiver compra/pagamento/orçamento vinculado, bloqueia e sugere "Desativar".</li>
+            </ul>
+          </div>
+        </div>
+      )}
 
       {showImport && (
         <ImportPagamentosCSVModal
