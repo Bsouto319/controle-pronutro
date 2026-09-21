@@ -81,6 +81,8 @@ export default function Financeiro() {
   const [editandoRepasse, setEditandoRepasse] = useState<Record<string, string>>({})
   const [editandoNomeMedico, setEditandoNomeMedico] = useState<Record<string, string>>({})
   const [editandoNomeMed, setEditandoNomeMed] = useState<Record<string, string>>({})
+  const [editandoMedicoId, setEditandoMedicoId] = useState<string | null>(null)
+  const [editandoMedId, setEditandoMedId] = useState<string | null>(null)
   const [novoProcNome, setNovoProcNome] = useState('')
   const [novoProcCategoria, setNovoProcCategoria] = useState('procedimento')
   const [novoProcValor, setNovoProcValor] = useState('')
@@ -632,16 +634,39 @@ export default function Financeiro() {
               {medicamentos.map((m) => (
                 <div key={m.id} className={`flex flex-wrap items-center justify-between gap-2 border rounded-lg px-3 py-2 text-sm ${m.ativo === false ? 'border-gray-200 bg-gray-50 opacity-60' : 'border-gray-100'}`}>
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <input
-                      type="text"
-                      value={editandoNomeMed[m.id] ?? m.nome}
-                      onChange={(e) => setEditandoNomeMed((c) => ({ ...c, [m.id]: e.target.value }))}
-                      className="w-40 px-2 py-1 border border-gray-200 rounded-lg text-sm font-semibold text-gray-800 focus:outline-none focus:ring-1 focus:ring-brand"
-                    />
-                    {editandoNomeMed[m.id] !== undefined && editandoNomeMed[m.id] !== m.nome && (
-                      <button onClick={() => salvarNomeMedicamento(m.id)} className="text-xs font-medium text-brand hover:underline shrink-0">
-                        Salvar nome
-                      </button>
+                    {editandoMedId === m.id ? (
+                      <>
+                        <input
+                          type="text"
+                          autoFocus
+                          value={editandoNomeMed[m.id] ?? m.nome}
+                          onChange={(e) => setEditandoNomeMed((c) => ({ ...c, [m.id]: e.target.value }))}
+                          className="w-40 px-2 py-1 border border-brand rounded-lg text-sm font-semibold text-gray-800 focus:outline-none focus:ring-1 focus:ring-brand"
+                        />
+                        <button
+                          onClick={() => { salvarNomeMedicamento(m.id); setEditandoMedId(null) }}
+                          className="text-xs font-semibold text-brand hover:underline shrink-0"
+                        >
+                          ✓ Salvar
+                        </button>
+                        <button
+                          onClick={() => { setEditandoMedId(null); setEditandoNomeMed((c) => { const n = { ...c }; delete n[m.id]; return n }) }}
+                          className="text-xs text-gray-400 hover:underline shrink-0"
+                        >
+                          Cancelar
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-semibold text-gray-800">{m.nome}</span>
+                        <button
+                          onClick={() => setEditandoMedId(m.id)}
+                          title="Editar nome"
+                          className="text-xs px-1.5 py-0.5 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-brand transition-colors shrink-0"
+                        >
+                          ✏️
+                        </button>
+                      </>
                     )}
                     <span className="text-gray-400 mx-1">·</span>
                     <span className={m.estoque_mg <= 0 ? 'text-red-600 font-medium' : 'text-gray-600'}>{m.estoque_mg} mg em estoque</span>
@@ -717,17 +742,40 @@ export default function Financeiro() {
             <div className="space-y-2">
               {medicos.map((m) => (
                 <div key={m.id} className={`flex flex-wrap items-center justify-between gap-2 border rounded-lg px-3 py-2 text-sm ${m.ativo === false ? 'border-gray-200 bg-gray-50 opacity-60' : 'border-gray-100'}`}>
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="text"
-                      value={editandoNomeMedico[m.id] ?? m.nome}
-                      onChange={(e) => setEditandoNomeMedico((c) => ({ ...c, [m.id]: e.target.value }))}
-                      className="w-40 px-2 py-1 border border-gray-200 rounded-lg text-sm font-semibold text-gray-800 focus:outline-none focus:ring-1 focus:ring-brand"
-                    />
-                    {editandoNomeMedico[m.id] !== undefined && editandoNomeMedico[m.id] !== m.nome && (
-                      <button onClick={() => salvarNomeMedico(m.id)} className="text-xs font-medium text-brand hover:underline shrink-0">
-                        Salvar nome
-                      </button>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {editandoMedicoId === m.id ? (
+                      <>
+                        <input
+                          type="text"
+                          autoFocus
+                          value={editandoNomeMedico[m.id] ?? m.nome}
+                          onChange={(e) => setEditandoNomeMedico((c) => ({ ...c, [m.id]: e.target.value }))}
+                          className="w-40 px-2 py-1 border border-brand rounded-lg text-sm font-semibold text-gray-800 focus:outline-none focus:ring-1 focus:ring-brand"
+                        />
+                        <button
+                          onClick={() => { salvarNomeMedico(m.id); setEditandoMedicoId(null) }}
+                          className="text-xs font-semibold text-brand hover:underline shrink-0"
+                        >
+                          ✓ Salvar
+                        </button>
+                        <button
+                          onClick={() => { setEditandoMedicoId(null); setEditandoNomeMedico((c) => { const n = { ...c }; delete n[m.id]; return n }) }}
+                          className="text-xs text-gray-400 hover:underline shrink-0"
+                        >
+                          Cancelar
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-semibold text-gray-800">{m.nome}</span>
+                        <button
+                          onClick={() => setEditandoMedicoId(m.id)}
+                          title="Editar nome"
+                          className="text-xs px-1.5 py-0.5 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-brand transition-colors shrink-0"
+                        >
+                          ✏️
+                        </button>
+                      </>
                     )}
                     <span className="text-gray-400 mx-1">·</span>
                     <span className="text-gray-500">{m.percentual_repasse != null ? `${m.percentual_repasse}% de repasse` : 'sem % definido'}</span>
