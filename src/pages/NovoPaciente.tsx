@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import ProNutroLogo from '../components/ProNutroLogo'
 import MedicoSelect from '../components/MedicoSelect'
@@ -10,6 +10,7 @@ export default function NovoPaciente() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [duplicado, setDuplicado] = useState<{ id: string; nome: string } | null>(null)
   const [medicos, setMedicos] = useState<Medico[]>([])
   const [medicamentos, setMedicamentos] = useState<Medicamento[]>([])
   const [medicamentoId, setMedicamentoId] = useState('')
@@ -67,7 +68,29 @@ export default function NovoPaciente() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+    setDuplicado(null)
     setLoading(true)
+
+    // Checa CPF já cadastrado antes de criar -- achamos pacientes duplicados
+    // reais no banco (mesmo CPF, dois cadastros criados em datas diferentes,
+    // provavelmente porque quem cadastrou não conferiu se já existia). Bloqueia
+    // em vez de deixar criar mais um.
+    //
+    // IMPORTANTE: usar .limit(1) em vez de .maybeSingle() -- com CPF que já
+    // tem 2+ cadastros duplicados no banco (o próprio caso que motivou essa
+    // checagem), .maybeSingle() dá erro de "mais de uma linha" e a checagem
+    // silenciosamente deixava passar, criando um 3º duplicado.
+    const { data: existentes } = await supabase
+      .from('pronutro_patients')
+      .select('id, nome')
+      .eq('cpf', form.cpf)
+      .limit(1)
+
+    if (existentes && existentes.length > 0) {
+      setDuplicado(existentes[0])
+      setLoading(false)
+      return
+    }
 
     const { data: patient, error: pErr } = await supabase
       .from('pronutro_patients')
@@ -265,6 +288,15 @@ export default function NovoPaciente() {
           )}
         </div>
 
+        {duplicado && (
+          <div className="flex items-start gap-2 bg-orange-50 border border-orange-200 text-orange-700 px-4 py-3 rounded-xl text-sm">
+            <span>⚠️</span>
+            <span>
+              Já existe um paciente cadastrado com esse CPF: <strong>{duplicado.nome}</strong>.{' '}
+              <Link to={`/paciente/${duplicado.id}`} className="underline font-semibold">Abrir a ficha dele</Link> em vez de criar um novo cadastro.
+            </span>
+          </div>
+        )}
         {error && (
           <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
             <span>⚠️</span> {error}

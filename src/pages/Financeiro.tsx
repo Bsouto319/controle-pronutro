@@ -78,6 +78,8 @@ export default function Financeiro() {
   const [novoMedicoRepasse, setNovoMedicoRepasse] = useState('')
   const [savingMedico, setSavingMedico] = useState(false)
   const [editandoRepasse, setEditandoRepasse] = useState<Record<string, string>>({})
+  const [editandoNomeMedico, setEditandoNomeMedico] = useState<Record<string, string>>({})
+  const [editandoNomeMed, setEditandoNomeMed] = useState<Record<string, string>>({})
   const [novoProcNome, setNovoProcNome] = useState('')
   const [novoProcCategoria, setNovoProcCategoria] = useState('procedimento')
   const [novoProcValor, setNovoProcValor] = useState('')
@@ -269,6 +271,43 @@ export default function Financeiro() {
     load()
   }
 
+  async function salvarNomeMedicamento(medId: string) {
+    const nome = editandoNomeMed[medId]
+    if (!nome || !nome.trim()) return
+    const { error } = await supabase.from('pronutro_medicamentos').update({ nome: nome.trim() }).eq('id', medId)
+    if (error) {
+      alert('Erro ao renomear medicação: ' + error.message)
+      return
+    }
+    setEditandoNomeMed((c) => { const next = { ...c }; delete next[medId]; return next })
+    load()
+  }
+
+  async function toggleAtivoMedicamento(medId: string, ativoAtual: boolean) {
+    const { error } = await supabase.from('pronutro_medicamentos').update({ ativo: !ativoAtual }).eq('id', medId)
+    if (error) { alert('Erro: ' + error.message); return }
+    load()
+  }
+
+  // Mesma lógica de proteção do excluirMedico: só apaga de verdade se não
+  // houver nenhuma compra/pagamento/orçamento vinculado.
+  async function excluirMedicamento(medId: string, nome: string) {
+    const [{ count: c1 }, { count: c2 }, { count: c3 }] = await Promise.all([
+      supabase.from('pronutro_purchases').select('id', { count: 'exact', head: true }).eq('medicamento_id', medId),
+      supabase.from('pronutro_pagamentos').select('id', { count: 'exact', head: true }).eq('medicamento_id', medId),
+      supabase.from('pronutro_orcamento_itens').select('id', { count: 'exact', head: true }).eq('medicamento_id', medId),
+    ])
+    const total = (c1 ?? 0) + (c2 ?? 0) + (c3 ?? 0)
+    if (total > 0) {
+      alert(`${nome} tem ${total} registro(s) vinculado(s) (compras/pagamentos/orçamentos) -- não dá pra excluir sem perder histórico. Use "Desativar" pra tirar da lista sem apagar nada.`)
+      return
+    }
+    if (!confirm(`Excluir ${nome} definitivamente? Essa ação não pode ser desfeita.`)) return
+    const { error } = await supabase.from('pronutro_medicamentos').delete().eq('id', medId)
+    if (error) { alert('Erro ao excluir: ' + error.message); return }
+    load()
+  }
+
   async function ajustarEstoque(medId: string) {
     const valor = ajusteEstoque[medId]
     if (!valor) return
@@ -313,6 +352,45 @@ export default function Financeiro() {
       return
     }
     setEditandoRepasse((c) => { const next = { ...c }; delete next[medId]; return next })
+    load()
+  }
+
+  async function salvarNomeMedico(medId: string) {
+    const nome = editandoNomeMedico[medId]
+    if (!nome || !nome.trim()) return
+    const { error } = await supabase.from('pronutro_medicos').update({ nome: nome.trim() }).eq('id', medId)
+    if (error) {
+      alert('Erro ao renomear médico: ' + error.message)
+      return
+    }
+    setEditandoNomeMedico((c) => { const next = { ...c }; delete next[medId]; return next })
+    load()
+  }
+
+  async function toggleAtivoMedico(medId: string, ativoAtual: boolean) {
+    const { error } = await supabase.from('pronutro_medicos').update({ ativo: !ativoAtual }).eq('id', medId)
+    if (error) { alert('Erro: ' + error.message); return }
+    load()
+  }
+
+  // Médico pode estar referenciado em pacientes/pagamentos/metas -- excluir de
+  // verdade apagaria histórico financeiro real. Só permite exclusão física
+  // quando não há NENHUM vínculo; caso contrário, só "desativar" (ativo=false,
+  // some das listas de seleção mas preserva tudo que já foi lançado).
+  async function excluirMedico(medId: string, nome: string) {
+    const [{ count: c1 }, { count: c2 }, { count: c3 }] = await Promise.all([
+      supabase.from('pronutro_patients').select('id', { count: 'exact', head: true }).eq('medico_id', medId),
+      supabase.from('pronutro_pagamentos').select('id', { count: 'exact', head: true }).eq('medico_id', medId),
+      supabase.from('pronutro_metas').select('id', { count: 'exact', head: true }).eq('medico_id', medId),
+    ])
+    const total = (c1 ?? 0) + (c2 ?? 0) + (c3 ?? 0)
+    if (total > 0) {
+      alert(`${nome} tem ${total} registro(s) vinculado(s) (pacientes/pagamentos/metas) -- não dá pra excluir sem perder histórico. Use "Desativar" pra tirar da lista sem apagar nada.`)
+      return
+    }
+    if (!confirm(`Excluir ${nome} definitivamente? Essa ação não pode ser desfeita.`)) return
+    const { error } = await supabase.from('pronutro_medicos').delete().eq('id', medId)
+    if (error) { alert('Erro ao excluir: ' + error.message); return }
     load()
   }
 
@@ -512,13 +590,24 @@ export default function Financeiro() {
           ) : (
             <div className="space-y-2">
               {medicamentos.map((m) => (
-                <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 border border-gray-100 rounded-lg px-3 py-2 text-sm">
-                  <div>
-                    <span className="font-semibold text-gray-800">{m.nome}</span>
-                    <span className="text-gray-400 mx-1.5">·</span>
+                <div key={m.id} className={`flex flex-wrap items-center justify-between gap-2 border rounded-lg px-3 py-2 text-sm ${m.ativo === false ? 'border-gray-200 bg-gray-50 opacity-60' : 'border-gray-100'}`}>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <input
+                      type="text"
+                      value={editandoNomeMed[m.id] ?? m.nome}
+                      onChange={(e) => setEditandoNomeMed((c) => ({ ...c, [m.id]: e.target.value }))}
+                      className="w-40 px-2 py-1 border border-gray-200 rounded-lg text-sm font-semibold text-gray-800 focus:outline-none focus:ring-1 focus:ring-brand"
+                    />
+                    {editandoNomeMed[m.id] !== undefined && editandoNomeMed[m.id] !== m.nome && (
+                      <button onClick={() => salvarNomeMedicamento(m.id)} className="text-xs font-medium text-brand hover:underline shrink-0">
+                        Salvar nome
+                      </button>
+                    )}
+                    <span className="text-gray-400 mx-1">·</span>
                     <span className={m.estoque_mg <= 0 ? 'text-red-600 font-medium' : 'text-gray-600'}>{m.estoque_mg} mg em estoque</span>
-                    <span className="text-gray-400 mx-1.5">·</span>
+                    <span className="text-gray-400 mx-1">·</span>
                     <span className="text-gray-500">{m.custo_mg != null ? `custo ${fmtMoney(m.custo_mg)}/mg` : 'sem custo definido'}</span>
+                    {m.ativo === false && <span className="text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full font-medium">Inativo</span>}
                   </div>
                   <div className="flex items-center gap-1.5">
                     <input
@@ -540,6 +629,12 @@ export default function Financeiro() {
                     />
                     <button onClick={() => salvarCusto(m.id)} className="text-xs font-medium text-brand hover:underline">
                       Salvar custo
+                    </button>
+                    <button onClick={() => toggleAtivoMedicamento(m.id, m.ativo !== false)} className="text-xs font-medium text-gray-500 hover:underline">
+                      {m.ativo === false ? 'Reativar' : 'Desativar'}
+                    </button>
+                    <button onClick={() => excluirMedicamento(m.id, m.nome)} className="text-xs font-medium text-red-500 hover:underline">
+                      Excluir
                     </button>
                   </div>
                 </div>
@@ -581,11 +676,22 @@ export default function Financeiro() {
           ) : (
             <div className="space-y-2">
               {medicos.map((m) => (
-                <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 border border-gray-100 rounded-lg px-3 py-2 text-sm">
-                  <div>
-                    <span className="font-semibold text-gray-800">{m.nome}</span>
-                    <span className="text-gray-400 mx-1.5">·</span>
+                <div key={m.id} className={`flex flex-wrap items-center justify-between gap-2 border rounded-lg px-3 py-2 text-sm ${m.ativo === false ? 'border-gray-200 bg-gray-50 opacity-60' : 'border-gray-100'}`}>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={editandoNomeMedico[m.id] ?? m.nome}
+                      onChange={(e) => setEditandoNomeMedico((c) => ({ ...c, [m.id]: e.target.value }))}
+                      className="w-40 px-2 py-1 border border-gray-200 rounded-lg text-sm font-semibold text-gray-800 focus:outline-none focus:ring-1 focus:ring-brand"
+                    />
+                    {editandoNomeMedico[m.id] !== undefined && editandoNomeMedico[m.id] !== m.nome && (
+                      <button onClick={() => salvarNomeMedico(m.id)} className="text-xs font-medium text-brand hover:underline shrink-0">
+                        Salvar nome
+                      </button>
+                    )}
+                    <span className="text-gray-400 mx-1">·</span>
                     <span className="text-gray-500">{m.percentual_repasse != null ? `${m.percentual_repasse}% de repasse` : 'sem % definido'}</span>
+                    {m.ativo === false && <span className="text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full font-medium">Inativo</span>}
                   </div>
                   <div className="flex items-center gap-1.5">
                     <input
@@ -597,6 +703,12 @@ export default function Financeiro() {
                     />
                     <button onClick={() => salvarRepasse(m.id)} className="text-xs font-medium text-brand hover:underline">
                       Salvar
+                    </button>
+                    <button onClick={() => toggleAtivoMedico(m.id, m.ativo !== false)} className="text-xs font-medium text-gray-500 hover:underline">
+                      {m.ativo === false ? 'Reativar' : 'Desativar'}
+                    </button>
+                    <button onClick={() => excluirMedico(m.id, m.nome)} className="text-xs font-medium text-red-500 hover:underline">
+                      Excluir
                     </button>
                   </div>
                 </div>
