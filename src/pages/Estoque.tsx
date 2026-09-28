@@ -131,35 +131,30 @@ function DetalheMedicamento({
           </button>
         </div>
       )}
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
-        <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
-          <p className="text-xs text-blue-500 font-medium mb-1">Comprado (histórico)</p>
-          <p className="text-base sm:text-xl font-bold text-blue-700">{comprado} {unidade}</p>
+      {/* Stats em linha única, não 3 cards grandes -- é 1 medicamento, não um
+          dashboard, não precisa do mesmo peso visual de um resumo geral. */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 bg-gray-50 rounded-lg px-3 py-2.5 text-sm">
+        <span className="text-gray-500">Comprado <b className="text-blue-700 font-semibold">{comprado} {unidade}</b></span>
+        <span className="text-gray-500">Vendido <b className="text-orange-700 font-semibold">{alocadoPacientes} {unidade}</b></span>
+        <span className="text-gray-500">
+          Saldo <b className={`font-semibold ${emAlerta ? 'text-red-700' : 'text-green-700'}`}>{saldo} {unidade}</b>
+        </span>
+        <div className="ml-auto flex items-center gap-1.5">
+          <label className="text-xs text-gray-400">Alertar em</label>
+          <input
+            type="number" step="0.5" min="0"
+            value={alertaForm[med.id] ?? ''}
+            onChange={(e) => setAlertaForm((f) => ({ ...f, [med.id]: e.target.value }))}
+            className="w-16 px-1.5 py-1 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-brand"
+          />
+          <button
+            onClick={() => saveAlerta(med.id)}
+            disabled={savingAlerta === med.id}
+            className="text-xs text-brand font-medium hover:underline disabled:opacity-50"
+          >
+            {savingAlerta === med.id ? '...' : 'Salvar'}
+          </button>
         </div>
-        <div className="bg-orange-50 border border-orange-100 rounded-xl p-3 text-center">
-          <p className="text-xs text-orange-500 font-medium mb-1">Vendido a pacientes (histórico)</p>
-          <p className="text-base sm:text-xl font-bold text-orange-700">{alocadoPacientes} {unidade}</p>
-        </div>
-        <div className={`border rounded-xl p-3 text-center ${emAlerta ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-100'}`}>
-          <p className={`text-xs font-medium mb-1 ${emAlerta ? 'text-red-500' : 'text-green-500'}`}>Saldo atual</p>
-          <p className={`text-base sm:text-xl font-bold ${emAlerta ? 'text-red-700' : 'text-green-700'}`}>{saldo} {unidade}</p>
-        </div>
-      </div>
-      <div className="flex items-center gap-2 mt-3">
-        <label className="text-xs text-gray-500">Alertar quando saldo cair até</label>
-        <input
-          type="number" step="0.5" min="0"
-          value={alertaForm[med.id] ?? ''}
-          onChange={(e) => setAlertaForm((f) => ({ ...f, [med.id]: e.target.value }))}
-          className="w-24 px-2 py-1 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
-        />
-        <button
-          onClick={() => saveAlerta(med.id)}
-          disabled={savingAlerta === med.id}
-          className="text-xs bg-gray-100 text-gray-600 px-3 py-1 rounded-lg font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
-        >
-          {savingAlerta === med.id ? 'Salvando...' : 'Salvar'}
-        </button>
       </div>
     </div>
   )
