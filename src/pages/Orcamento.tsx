@@ -258,10 +258,7 @@ export default function OrcamentoPage() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-800">Orçamentos</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Monte, aprove e converta em venda sem digitar o paciente/medicação de novo.</p>
-        </div>
+        <h1 className="text-xl font-bold text-gray-800">Orçamentos</h1>
         <button onClick={() => setShowForm((v) => !v)}
           className="flex items-center gap-1.5 bg-brand text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-brand-dark transition-colors shadow-sm">
           + Novo Orçamento

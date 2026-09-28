@@ -77,10 +77,7 @@ export default function Usuarios() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-xl font-bold text-gray-800">Usuários do Sistema</h1>
-        <p className="text-sm text-gray-400 mt-0.5">Adicione médicos e funcionários para terem acesso ao controle.</p>
-      </div>
+      <h1 className="text-xl font-bold text-gray-800">Usuários do Sistema</h1>
 
       <form onSubmit={handleCreate} className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm space-y-4">
         <h2 className="text-sm font-bold text-gray-700">+ Novo usuário</h2>

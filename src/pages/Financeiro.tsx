@@ -545,10 +545,7 @@ export default function Financeiro() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-800">Financeiro</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Controle de pagamentos — quem pagou, quando e quanto.</p>
-        </div>
+        <h1 className="text-xl font-bold text-gray-800">Financeiro</h1>
         <div className="flex gap-2">
           <button onClick={() => setShowImport(true)} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors font-medium bg-white">
             ↑ <span className="hidden sm:inline">Importar</span> Planilha
