@@ -72,6 +72,9 @@ export default function Paciente() {
   const [editForm, setEditForm] = useState<Partial<Patient>>({})
   const [savingEdit, setSavingEdit] = useState(false)
 
+  // Navegação em abas — puramente visual, não muda nenhuma query nem lógica existente
+  const [activeTab, setActiveTab] = useState<'tratamento' | 'financeiro' | 'documentos'>('tratamento')
+
   const sigRefs = useRef<Record<number, SignaturePadHandle | null>>({})
   const purchaseReceitaInputRef = useRef<HTMLInputElement>(null)
   const bioFileInputRef = useRef<HTMLInputElement>(null)
@@ -825,6 +828,29 @@ export default function Paciente() {
         ))}
       </div>
 
+      {/* Navegação em abas */}
+      <div className="flex gap-1 border-b border-gray-200">
+        {([
+          { key: 'tratamento', label: 'Tratamento' },
+          { key: 'financeiro', label: 'Financeiro' },
+          { key: 'documentos', label: 'Documentos' },
+        ] as const).map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === tab.key
+                ? 'border-brand text-brand'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'tratamento' && (
+      <>
       {/* Estoque de Medicamento */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <h2 className="font-bold text-gray-800 mb-4">Controle de Estoque — Tirzepatida</h2>
@@ -966,7 +992,11 @@ export default function Paciente() {
           </div>
         )}
       </div>
+      </>
+      )}
 
+      {activeTab === 'documentos' && (
+      <>
       {/* Bioimpedância (InBody) */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <h2 className="font-bold text-gray-800 mb-1">Bioimpedância (InBody)</h2>
@@ -1057,7 +1087,11 @@ export default function Paciente() {
           </button>
         </div>
       </div>
+      </>
+      )}
 
+      {activeTab === 'financeiro' && (
+      <>
       {/* Financeiro */}
       {isAdmin && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -1109,7 +1143,11 @@ export default function Paciente() {
           )}
         </div>
       )}
+      </>
+      )}
 
+      {activeTab === 'documentos' && (
+      <>
       {/* Contrato */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex items-center justify-between mb-3">
@@ -1150,7 +1188,11 @@ export default function Paciente() {
           <p className="text-sm text-gray-400">Contrato não gerado.</p>
         )}
       </div>
+      </>
+      )}
 
+      {activeTab === 'tratamento' && (
+      <>
       {/* Gráfico de evolução */}
       <EvolucaoChart evolucao={evolucao} doses={doses} />
 
@@ -1481,6 +1523,8 @@ export default function Paciente() {
             })}
           </div>
         </div>
+      )}
+      </>
       )}
 
       {showFinalizarModal && (
