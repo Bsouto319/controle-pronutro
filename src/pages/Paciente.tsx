@@ -9,6 +9,7 @@ import { isNoShowPendente } from '../lib/noShow'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import MedicoSelect from '../components/MedicoSelect'
+import SlideOver from '../components/SlideOver'
 
 const FORMAS_PAGAMENTO: Record<string, string> = {
   pix: 'Pix', dinheiro: 'Dinheiro', cartao_credito: 'Cartão crédito', cartao_debito: 'Cartão débito',
@@ -74,6 +75,11 @@ export default function Paciente() {
 
   // Navegação em abas — puramente visual, não muda nenhuma query nem lógica existente
   const [activeTab, setActiveTab] = useState<'tratamento' | 'financeiro' | 'documentos'>('tratamento')
+
+  // Painéis laterais do Estoque — mesma ideia de "clicar abre um bloco separado"
+  const [entradaPanelOpen, setEntradaPanelOpen] = useState(false)
+  const [selectedPurchase, setSelectedPurchase] = useState<Purchase | null>(null)
+  const [selectedDose, setSelectedDose] = useState<DoseRecord | null>(null)
 
   const sigRefs = useRef<Record<number, SignaturePadHandle | null>>({})
   const purchaseReceitaInputRef = useRef<HTMLInputElement>(null)
@@ -873,125 +879,179 @@ export default function Paciente() {
           </div>
         </div>
 
-        {purchases.length > 0 && (
-          <div className="mb-4">
-            <p className="text-xs font-medium text-gray-500 mb-2">HISTÓRICO DE ENTRADAS</p>
-            <div className="space-y-1.5">
-              {purchases.map((pur) => (
-                <div key={pur.id} className="flex items-start justify-between gap-2 bg-blue-50/50 border border-blue-100 rounded-lg px-3 py-2 text-sm">
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 min-w-0">
-                    <span className="text-blue-600 font-semibold">+{pur.quantidade_mg} mg</span>
-                    {pur.medicamento_id && (
-                      <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-medium">
-                        {medicamentos.find((m) => m.id === pur.medicamento_id)?.nome ?? 'Medicação'}
-                      </span>
-                    )}
-                    <span className="text-gray-600">{format(new Date(pur.data_compra + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}</span>
-                    {pur.lote && <span className="text-gray-400 text-xs">Lote: {pur.lote}</span>}
-                    {pur.observacoes && <span className="text-gray-400 text-xs truncate max-w-[120px]">{pur.observacoes}</span>}
-                    {pur.receita_url && (
-                      <a href={pur.receita_url} target="_blank" rel="noopener noreferrer" className="text-brand text-xs font-medium hover:underline">
-                        📄 Ver receita
-                      </a>
-                    )}
-                  </div>
-                  {isAdmin && (
-                    <button onClick={() => deletePurchase(pur.id)} className="text-red-400 hover:text-red-600 text-xs flex-shrink-0">✕</button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {doses.filter(d => d.dose_mg).length > 0 && (
-          <div className="mb-4">
-            <p className="text-xs font-medium text-gray-500 mb-2">SAÍDAS POR DOSE APLICADA</p>
-            <div className="space-y-1.5">
-              {doses.filter(d => d.dose_mg).map((d) => (
-                <div key={d.id} className="flex items-center gap-3 bg-orange-50/50 border border-orange-100 rounded-lg px-3 py-2 text-sm">
-                  <span className="text-orange-600 font-semibold">−{d.dose_mg} mg</span>
-                  <span className="text-gray-600">{d.semana}ª semana</span>
-                  {d.data_aplicacao && <span className="text-gray-400 text-xs">{format(new Date(d.data_aplicacao + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}</span>}
-                  {d.lote && <span className="text-gray-400 text-xs">Lote: {d.lote}</span>}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {isAdmin && (
-          <div className="border-t border-gray-100 pt-4">
-            <p className="text-xs font-medium text-gray-500 mb-3">REGISTRAR NOVA ENTRADA</p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">Data da compra *</label>
-                <input type="date" value={purchaseForm.data_compra}
-                  onChange={(e) => setPurchaseForm(f => ({ ...f, data_compra: e.target.value }))}
-                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">Medicação</label>
-                <select value={purchaseForm.medicamento_id} onChange={(e) => setPurchaseForm(f => ({ ...f, medicamento_id: e.target.value }))}
-                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand">
-                  <option value="">Selecionar...</option>
-                  {medicamentos.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">Quantidade (mg) *</label>
-                <input type="number" step="0.5" placeholder="Ex: 10" value={purchaseForm.quantidade_mg}
-                  onChange={(e) => setPurchaseForm(f => ({ ...f, quantidade_mg: e.target.value }))}
-                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">Lote</label>
-                <input type="text" placeholder="AB1234" value={purchaseForm.lote}
-                  onChange={(e) => setPurchaseForm(f => ({ ...f, lote: e.target.value }))}
-                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">Valor pago (R$)</label>
-                <input type="text" placeholder="Ex: 350,00" value={purchaseForm.valor_pago}
-                  onChange={(e) => setPurchaseForm(f => ({ ...f, valor_pago: e.target.value }))}
-                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
-                <p className="text-[11px] text-gray-400 mt-1">Opcional — lança o pagamento junto (Financeiro).</p>
-              </div>
-              {purchaseForm.valor_pago && (
-                <div>
-                  <label className="text-xs text-gray-500 block mb-1">Forma de pagamento</label>
-                  <select value={purchaseForm.forma_pagamento} onChange={(e) => setPurchaseForm(f => ({ ...f, forma_pagamento: e.target.value }))}
-                    className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand">
-                    {FORMAS_PAGAMENTO_OPTIONS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-                  </select>
-                </div>
-              )}
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">Obs</label>
-                <input type="text" placeholder="Farmácia, recompra..." value={purchaseForm.observacoes}
-                  onChange={(e) => setPurchaseForm(f => ({ ...f, observacoes: e.target.value }))}
-                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">Receita (PDF)</label>
-                <div className="flex items-center gap-2">
-                  <input ref={purchaseReceitaInputRef} type="file" accept="application/pdf"
-                    onChange={(e) => setPurchaseReceitaFile(e.target.files?.[0] ?? null)}
-                    className="flex-1 min-w-0 text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-brand/10 file:text-brand" />
-                  {purchaseReceitaFile && (
-                    <button type="button" onClick={() => { setPurchaseReceitaFile(null); if (purchaseReceitaInputRef.current) purchaseReceitaInputRef.current.value = '' }}
-                      title="Remover arquivo selecionado" className="text-red-500 hover:text-red-700 text-sm font-bold flex-shrink-0">✕</button>
-                  )}
-                </div>
-              </div>
-            </div>
-            <button onClick={savePurchase} disabled={savingPurchase || !purchaseForm.quantidade_mg || !purchaseForm.data_compra}
-              className="mt-3 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50">
-              {savingPurchase ? 'Salvando...' : '+ Registrar Entrada'}
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-medium text-gray-500">MOVIMENTAÇÕES</p>
+          {isAdmin && (
+            <button onClick={() => setEntradaPanelOpen(true)}
+              className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-blue-700 transition-colors">
+              + Nova Entrada
             </button>
+          )}
+        </div>
+
+        {(purchases.length > 0 || doses.some(d => d.dose_mg)) ? (
+          <div className="overflow-x-auto border border-gray-100 rounded-lg">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-gray-500 text-xs">
+                  <th className="text-left font-medium px-3 py-2">Data</th>
+                  <th className="text-left font-medium px-3 py-2">Tipo</th>
+                  <th className="text-right font-medium px-3 py-2">Quantidade</th>
+                  <th className="text-left font-medium px-3 py-2 hidden sm:table-cell">Lote</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {[
+                  ...purchases.map((pur) => ({ kind: 'entrada' as const, date: pur.data_compra, data: pur })),
+                  ...doses.filter(d => d.dose_mg).map((d) => ({ kind: 'saida' as const, date: d.data_aplicacao ?? '', data: d })),
+                ]
+                  .sort((a, b) => (a.date < b.date ? 1 : -1))
+                  .map((row) => (
+                    <tr
+                      key={`${row.kind}-${row.data.id}`}
+                      onClick={() => row.kind === 'entrada' ? setSelectedPurchase(row.data as Purchase) : setSelectedDose(row.data as DoseRecord)}
+                      className="cursor-pointer hover:bg-gray-50 transition-colors"
+                    >
+                      <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                        {row.date ? format(new Date(row.date + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR }) : '—'}
+                      </td>
+                      <td className="px-3 py-2">
+                        {row.kind === 'entrada' ? (
+                          <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Entrada</span>
+                        ) : (
+                          <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">{(row.data as DoseRecord).semana}ª semana</span>
+                        )}
+                      </td>
+                      <td className={`px-3 py-2 text-right font-semibold whitespace-nowrap ${row.kind === 'entrada' ? 'text-blue-600' : 'text-orange-600'}`}>
+                        {row.kind === 'entrada' ? '+' : '−'}{row.kind === 'entrada' ? (row.data as Purchase).quantidade_mg : (row.data as DoseRecord).dose_mg} mg
+                      </td>
+                      <td className="px-3 py-2 text-gray-400 text-xs hidden sm:table-cell">{row.data.lote || '—'}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
           </div>
+        ) : (
+          <p className="text-sm text-gray-400">Nenhuma movimentação registrada ainda.</p>
         )}
       </div>
+
+      {/* Painel — detalhe de entrada */}
+      <SlideOver open={!!selectedPurchase} onClose={() => setSelectedPurchase(null)} title="Entrada de estoque">
+        {selectedPurchase && (
+          <div className="space-y-3 text-sm">
+            <div><span className="text-gray-500">Quantidade:</span> <span className="font-semibold text-blue-600">+{selectedPurchase.quantidade_mg} mg</span></div>
+            <div><span className="text-gray-500">Data:</span> {format(new Date(selectedPurchase.data_compra + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}</div>
+            {selectedPurchase.medicamento_id && (
+              <div><span className="text-gray-500">Medicação:</span> {medicamentos.find((m) => m.id === selectedPurchase.medicamento_id)?.nome ?? 'Medicação'}</div>
+            )}
+            {selectedPurchase.lote && <div><span className="text-gray-500">Lote:</span> {selectedPurchase.lote}</div>}
+            {selectedPurchase.observacoes && <div><span className="text-gray-500">Obs:</span> {selectedPurchase.observacoes}</div>}
+            {selectedPurchase.receita_url && (
+              <a href={selectedPurchase.receita_url} target="_blank" rel="noopener noreferrer" className="text-brand text-sm font-medium hover:underline block">
+                📄 Ver receita
+              </a>
+            )}
+            {isAdmin && (
+              <button
+                onClick={() => { deletePurchase(selectedPurchase.id); setSelectedPurchase(null) }}
+                className="text-sm text-red-500 hover:text-red-700 font-medium pt-2"
+              >
+                🗑️ Excluir esta entrada
+              </button>
+            )}
+          </div>
+        )}
+      </SlideOver>
+
+      {/* Painel — detalhe de saída (dose aplicada) */}
+      <SlideOver open={!!selectedDose} onClose={() => setSelectedDose(null)} title="Saída por dose aplicada">
+        {selectedDose && (
+          <div className="space-y-3 text-sm">
+            <div><span className="text-gray-500">Quantidade:</span> <span className="font-semibold text-orange-600">−{selectedDose.dose_mg} mg</span></div>
+            <div><span className="text-gray-500">Semana:</span> {selectedDose.semana}ª semana{selectedDose.ciclo > 1 && ` (ciclo ${selectedDose.ciclo})`}</div>
+            {selectedDose.data_aplicacao && <div><span className="text-gray-500">Data da aplicação:</span> {format(new Date(selectedDose.data_aplicacao + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}</div>}
+            {selectedDose.lote && <div><span className="text-gray-500">Lote:</span> {selectedDose.lote}</div>}
+            {selectedDose.observacoes && <div><span className="text-gray-500">Obs:</span> {selectedDose.observacoes}</div>}
+            <p className="text-xs text-gray-400 pt-2">Pra editar essa dose, use a seção "Esquema de Doses" abaixo.</p>
+          </div>
+        )}
+      </SlideOver>
+
+      {/* Painel — nova entrada */}
+      <SlideOver open={entradaPanelOpen} onClose={() => setEntradaPanelOpen(false)} title="Registrar nova entrada">
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Data da compra *</label>
+            <input type="date" value={purchaseForm.data_compra}
+              onChange={(e) => setPurchaseForm(f => ({ ...f, data_compra: e.target.value }))}
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Medicação</label>
+            <select value={purchaseForm.medicamento_id} onChange={(e) => setPurchaseForm(f => ({ ...f, medicamento_id: e.target.value }))}
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+              <option value="">Selecionar...</option>
+              {medicamentos.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Quantidade (mg) *</label>
+              <input type="number" step="0.5" placeholder="Ex: 10" value={purchaseForm.quantidade_mg}
+                onChange={(e) => setPurchaseForm(f => ({ ...f, quantidade_mg: e.target.value }))}
+                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Lote</label>
+              <input type="text" placeholder="AB1234" value={purchaseForm.lote}
+                onChange={(e) => setPurchaseForm(f => ({ ...f, lote: e.target.value }))}
+                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Valor pago (R$)</label>
+            <input type="text" placeholder="Ex: 350,00" value={purchaseForm.valor_pago}
+              onChange={(e) => setPurchaseForm(f => ({ ...f, valor_pago: e.target.value }))}
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+            <p className="text-[11px] text-gray-400 mt-1">Opcional — lança o pagamento junto (Financeiro).</p>
+          </div>
+          {purchaseForm.valor_pago && (
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Forma de pagamento</label>
+              <select value={purchaseForm.forma_pagamento} onChange={(e) => setPurchaseForm(f => ({ ...f, forma_pagamento: e.target.value }))}
+                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                {FORMAS_PAGAMENTO_OPTIONS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+              </select>
+            </div>
+          )}
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Obs</label>
+            <input type="text" placeholder="Farmácia, recompra..." value={purchaseForm.observacoes}
+              onChange={(e) => setPurchaseForm(f => ({ ...f, observacoes: e.target.value }))}
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Receita (PDF)</label>
+            <div className="flex items-center gap-2">
+              <input ref={purchaseReceitaInputRef} type="file" accept="application/pdf"
+                onChange={(e) => setPurchaseReceitaFile(e.target.files?.[0] ?? null)}
+                className="flex-1 min-w-0 text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-brand/10 file:text-brand" />
+              {purchaseReceitaFile && (
+                <button type="button" onClick={() => { setPurchaseReceitaFile(null); if (purchaseReceitaInputRef.current) purchaseReceitaInputRef.current.value = '' }}
+                  title="Remover arquivo selecionado" className="text-red-500 hover:text-red-700 text-sm font-bold flex-shrink-0">✕</button>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={async () => { await savePurchase(); setEntradaPanelOpen(false) }}
+            disabled={savingPurchase || !purchaseForm.quantidade_mg || !purchaseForm.data_compra}
+            className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
+          >
+            {savingPurchase ? 'Salvando...' : '+ Registrar Entrada'}
+          </button>
+        </div>
+      </SlideOver>
       </>
       )}
 
