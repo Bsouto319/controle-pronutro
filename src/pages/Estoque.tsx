@@ -356,10 +356,7 @@ export default function Estoque() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-xl font-bold text-gray-800">Controle de Estoque</h1>
-        <p className="text-sm text-gray-400 mt-0.5">Estoque bruto da clínica (o que foi comprado do fornecedor) menos o que já foi vendido/alocado aos pacientes — um saldo independente por medicamento.</p>
-      </div>
+      <h1 className="text-xl font-bold text-gray-800">Controle de Estoque</h1>
 
       {porMedicamento.some((s) => s.emAlerta) && (
         <div className="bg-red-50 border border-red-200 rounded-2xl px-5 py-4 flex items-center gap-3">
