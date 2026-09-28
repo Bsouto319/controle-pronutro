@@ -31,7 +31,12 @@ interface MedStat {
 // Corpo de detalhe (3 cartões de números + aviso de saldo negativo + campo
 // de alerta) reaproveitado tanto pelo cartão fixo do principal quanto pela
 // linha expandida da tabela dos demais medicamentos.
-function DetalheMedicamento({ s, ajusteSaldo, setAjusteSaldo, corrigirSaldo, savingAjuste, alertaForm, setAlertaForm, saveAlerta, savingAlerta }: {
+function DetalheMedicamento({
+  s, ajusteSaldo, setAjusteSaldo, corrigirSaldo, savingAjuste, alertaForm, setAlertaForm, saveAlerta, savingAlerta,
+  editandoNomeMed, setEditandoNomeMed, salvarNomeMedicamento,
+  editandoCusto, setEditandoCusto, salvarCusto,
+  toggleAtivoMedicamento, excluirMedicamento,
+}: {
   s: MedStat
   ajusteSaldo: Record<string, string>
   setAjusteSaldo: Dispatch<SetStateAction<Record<string, string>>>
@@ -41,11 +46,76 @@ function DetalheMedicamento({ s, ajusteSaldo, setAjusteSaldo, corrigirSaldo, sav
   setAlertaForm: Dispatch<SetStateAction<Record<string, string>>>
   saveAlerta: (medId: string) => void
   savingAlerta: string | null
+  editandoNomeMed: Record<string, string>
+  setEditandoNomeMed: Dispatch<SetStateAction<Record<string, string>>>
+  salvarNomeMedicamento: (medId: string) => void
+  editandoCusto: Record<string, string>
+  setEditandoCusto: Dispatch<SetStateAction<Record<string, string>>>
+  salvarCusto: (medId: string) => void
+  toggleAtivoMedicamento: (medId: string, ativoAtual: boolean) => void
+  excluirMedicamento: (medId: string, nome: string) => void
 }) {
   const { med, comprado, alocadoPacientes, saldo, emAlerta, negativo } = s
   const unidade = med.is_principal ? 'mg' : 'un'
+  const editandoNome = editandoNomeMed[med.id] !== undefined
+  const editandoCustoAtivo = editandoCusto[med.id] !== undefined
   return (
     <div>
+      {/* Cadastro editável — nome, custo, ativo/excluir. Fica aqui (no detalhe)
+          em vez de só em Financeiro, pra não precisar trocar de tela pra
+          corrigir um dado digitado errado. */}
+      <div className="flex flex-wrap items-center gap-2 mb-3 pb-3 border-b border-gray-100">
+        {editandoNome ? (
+          <div className="flex items-center gap-1.5">
+            <input
+              autoFocus
+              value={editandoNomeMed[med.id]}
+              onChange={(e) => setEditandoNomeMed((c) => ({ ...c, [med.id]: e.target.value }))}
+              className="px-2 py-1 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+            />
+            <button onClick={() => salvarNomeMedicamento(med.id)} className="text-xs text-green-600 font-medium hover:underline">Salvar</button>
+            <button onClick={() => setEditandoNomeMed((c) => { const n = { ...c }; delete n[med.id]; return n })} className="text-xs text-gray-400 hover:underline">Cancelar</button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setEditandoNomeMed((c) => ({ ...c, [med.id]: med.nome }))}
+            className="text-xs text-gray-500 hover:text-brand font-medium"
+          >
+            ✏️ Renomear
+          </button>
+        )}
+
+        {editandoCustoAtivo ? (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-gray-500">Custo por {unidade}:</span>
+            <input
+              autoFocus type="text" placeholder="Ex: 12,50"
+              value={editandoCusto[med.id]}
+              onChange={(e) => setEditandoCusto((c) => ({ ...c, [med.id]: e.target.value }))}
+              className="w-24 px-2 py-1 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+            />
+            <button onClick={() => salvarCusto(med.id)} className="text-xs text-green-600 font-medium hover:underline">Salvar</button>
+            <button onClick={() => setEditandoCusto((c) => { const n = { ...c }; delete n[med.id]; return n })} className="text-xs text-gray-400 hover:underline">Cancelar</button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setEditandoCusto((c) => ({ ...c, [med.id]: med.custo_mg != null ? String(med.custo_mg) : '' }))}
+            className="text-xs text-gray-500 hover:text-brand font-medium"
+          >
+            💲 Custo{med.custo_mg != null ? `: R$ ${med.custo_mg}` : ' (definir)'}
+          </button>
+        )}
+
+        <div className="ml-auto flex items-center gap-3">
+          <button onClick={() => toggleAtivoMedicamento(med.id, med.ativo)} className="text-xs text-gray-500 hover:text-brand font-medium">
+            {med.ativo ? 'Desativar' : '✓ Reativar'}
+          </button>
+          <button onClick={() => excluirMedicamento(med.id, med.nome)} className="text-xs text-red-500 hover:underline font-medium">
+            Excluir
+          </button>
+        </div>
+      </div>
+
       {negativo && (
         <div className="mb-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700 flex flex-wrap items-center gap-2">
           <span>⚠️ Saldo negativo — foi debitado mais do que entrou no sistema. Faça uma contagem física e corrija:</span>
@@ -110,6 +180,8 @@ export default function Estoque() {
   const [savingAjuste, setSavingAjuste] = useState<string | null>(null)
   const [buscaMed, setBuscaMed] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [editandoNomeMed, setEditandoNomeMed] = useState<Record<string, string>>({})
+  const [editandoCusto, setEditandoCusto] = useState<Record<string, string>>({})
 
   async function load() {
     setLoading(true)
@@ -224,6 +296,51 @@ export default function Estoque() {
     load()
   }
 
+  // Cadastro do medicamento (nome/custo/ativo/excluir) -- mesma lógica já
+  // usada em Financeiro.tsx, replicada aqui pra não obrigar troca de tela
+  // só pra corrigir um nome ou custo digitado errado.
+  async function salvarNomeMedicamento(medId: string) {
+    const nome = editandoNomeMed[medId]
+    if (!nome || !nome.trim()) return
+    const { error } = await supabase.from('pronutro_medicamentos').update({ nome: nome.trim() }).eq('id', medId)
+    if (error) { alert('Erro ao renomear medicação: ' + error.message); return }
+    setEditandoNomeMed((c) => { const n = { ...c }; delete n[medId]; return n })
+    load()
+  }
+
+  async function salvarCusto(medId: string) {
+    const valor = editandoCusto[medId]
+    if (valor === undefined) return
+    const custo = valor.trim() === '' ? null : Number(valor.replace(',', '.'))
+    const { error } = await supabase.from('pronutro_medicamentos').update({ custo_mg: custo }).eq('id', medId)
+    if (error) { alert('Erro ao salvar custo: ' + error.message); return }
+    setEditandoCusto((c) => { const n = { ...c }; delete n[medId]; return n })
+    load()
+  }
+
+  async function toggleAtivoMedicamento(medId: string, ativoAtual: boolean) {
+    const { error } = await supabase.from('pronutro_medicamentos').update({ ativo: !ativoAtual }).eq('id', medId)
+    if (error) { alert('Erro: ' + error.message); return }
+    load()
+  }
+
+  async function excluirMedicamento(medId: string, nome: string) {
+    const [{ count: c1 }, { count: c2 }, { count: c3 }] = await Promise.all([
+      supabase.from('pronutro_purchases').select('id', { count: 'exact', head: true }).eq('medicamento_id', medId),
+      supabase.from('pronutro_pagamentos').select('id', { count: 'exact', head: true }).eq('medicamento_id', medId),
+      supabase.from('pronutro_orcamento_itens').select('id', { count: 'exact', head: true }).eq('medicamento_id', medId),
+    ])
+    const total = (c1 ?? 0) + (c2 ?? 0) + (c3 ?? 0)
+    if (total > 0) {
+      alert(`${nome} tem ${total} registro(s) vinculado(s) (compras/pagamentos/orçamentos) -- não dá pra excluir sem perder histórico. Use "Desativar" pra tirar da lista sem apagar nada.`)
+      return
+    }
+    if (!confirm(`Excluir ${nome} definitivamente? Essa ação não pode ser desfeita.`)) return
+    const { error } = await supabase.from('pronutro_medicamentos').delete().eq('id', medId)
+    if (error) { alert('Erro ao excluir: ' + error.message); return }
+    load()
+  }
+
   if (loadingAdmin) return <div className="py-12 text-center text-gray-400">Carregando...</div>
   if (!isAdmin) return <Navigate to="/" replace />
   if (loading) return <div className="py-12 text-center text-gray-400">Carregando...</div>
@@ -278,6 +395,9 @@ export default function Estoque() {
             s={principalStats}
             ajusteSaldo={ajusteSaldo} setAjusteSaldo={setAjusteSaldo} corrigirSaldo={corrigirSaldo} savingAjuste={savingAjuste}
             alertaForm={alertaForm} setAlertaForm={setAlertaForm} saveAlerta={saveAlerta} savingAlerta={savingAlerta}
+            editandoNomeMed={editandoNomeMed} setEditandoNomeMed={setEditandoNomeMed} salvarNomeMedicamento={salvarNomeMedicamento}
+            editandoCusto={editandoCusto} setEditandoCusto={setEditandoCusto} salvarCusto={salvarCusto}
+            toggleAtivoMedicamento={toggleAtivoMedicamento} excluirMedicamento={excluirMedicamento}
           />
         </div>
       )}
@@ -327,6 +447,9 @@ export default function Estoque() {
                             s={s}
                             ajusteSaldo={ajusteSaldo} setAjusteSaldo={setAjusteSaldo} corrigirSaldo={corrigirSaldo} savingAjuste={savingAjuste}
                             alertaForm={alertaForm} setAlertaForm={setAlertaForm} saveAlerta={saveAlerta} savingAlerta={savingAlerta}
+                            editandoNomeMed={editandoNomeMed} setEditandoNomeMed={setEditandoNomeMed} salvarNomeMedicamento={salvarNomeMedicamento}
+                            editandoCusto={editandoCusto} setEditandoCusto={setEditandoCusto} salvarCusto={salvarCusto}
+                            toggleAtivoMedicamento={toggleAtivoMedicamento} excluirMedicamento={excluirMedicamento}
                           />
                         </td>
                       </tr>
