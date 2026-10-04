@@ -394,10 +394,19 @@ export default function Paciente() {
     }
 
     const existing = dosesAtual.find((d) => d.semana === semana)
-    if (existing) {
-      await supabase.from('pronutro_dose_records').update(payload).eq('id', existing.id)
-    } else {
-      await supabase.from('pronutro_dose_records').insert(payload)
+    const { error: saveError } = existing
+      ? await supabase.from('pronutro_dose_records').update(payload).eq('id', existing.id)
+      : await supabase.from('pronutro_dose_records').insert(payload)
+
+    // Se a gravação falhar, para aqui: não desconta estoque, não atualiza
+    // evolução e, principalmente, NÃO manda a confirmação pro paciente --
+    // bug real (Gertrudis, 9ª semana): a mensagem de "dose confirmada" saía
+    // mesmo quando o registro não tinha sido salvo, porque nada aqui conferia
+    // o resultado da gravação antes de seguir pro envio.
+    if (saveError) {
+      alert('Erro ao salvar a dose: ' + saveError.message + '\n\nNADA foi registrado e nenhuma confirmação foi enviada ao paciente. Tente salvar de novo.')
+      setSaving(null)
+      return
     }
 
     // Estoque geral da clínica desconta só quando a dose é REALMENTE aplicada
